@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Serif+Display:ital@0;1&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "DM Serif Display", serif;
+}
+
+/* Mengaktifkan dark mode berbasis class untuk Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --background: #f2f7fc;
+    --foreground: #1f2b36;
+  }
+  
+  .dark {
+    --background: #0e161e;
+    --foreground: #ddeaf2;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
