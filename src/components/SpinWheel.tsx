@@ -45,7 +45,6 @@ export default function SpinWheel() {
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, R, startAngle, endAngle);
-      ctx.closeFill();
       ctx.fillStyle = COLORS[i % COLORS.length];
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
