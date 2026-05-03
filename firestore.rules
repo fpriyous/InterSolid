@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. GLOBAL ADMIN ACCESS (NUCLEAR RULE)
+    // This allows the DEWA (fpriyous@gmail.com) to do EVERYTHING.
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null && (
+        request.auth.token.email.lower() == 'fpriyous@gmail.com'
+      );
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isDewa() {
+      return isSignedIn() && request.auth.token.email.lower() == 'fpriyous@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isDewa() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isMember() {
+      return isSignedIn();
+    }
+
+    // 2. SPECIFIC COLLECTION RULES
+    
+    // Announcements (Only Dewa/Admin)
+    match /announcements/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Events, Notes, Polls (Dewa, Admin, Member)
+    match /events/{id} {
+      allow read: if true;
+      allow write: if isMember();
+    }
+
+    match /notes/{id} {
+      allow read: if true;
+      allow write: if isMember();
+    }
+
+    match /polls/{id} {
+      allow read: if true;
+      allow create, delete: if isMember();
+      allow update: if isMember();
+      
+      match /options/{optId} {
+        allow read: if true;
+        allow create, delete: if isMember();
+        allow update: if isMember();
+      }
+    }
+
+    // Aspirasi
+    match /aspirasi/{id} {
+      allow read: if true;
+      allow create: if isMember();
+      allow update: if isMember(); // Reactions
+      allow delete: if isAdmin();
+    }
+
+    // Attendance Tables (Table structure isAdmin, Row data isMember)
+    match /absenTables/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      match /cols/{colId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+
+      match /rows/{rowId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
+    }
+
+    // Notifications
+    match /notifications/{id} {
+      allow read, delete: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if true;
+      allow update: if isAdmin();
+    }
+
+    match /admins/{id} {
+      allow read: if isSignedIn();
+      allow write: if isDewa() || (isSignedIn() && request.auth.uid == id);
+    }
+
+    // Memories (Class Moments)
+    match /memories/{id} {
+      allow read: if true;
+      allow create: if isMember();
+      allow update: if isMember() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])) ||
+        isAdmin() || (resource.data.userId == request.auth.uid)
+      );
+      allow delete: if isAdmin() || (resource.data.userId == request.auth.uid);
+    }
+  }
+}

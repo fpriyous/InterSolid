@@ -469,6 +469,7 @@ const SplashCursor = () => {
 
     let lastUpdateTime = Date.now();
     let colorUpdateTimer = 0.0;
+    let animationFrameId: number;
 
     function update() {
       const dt = Math.min((Date.now() - lastUpdateTime) / 1000, 0.016);
@@ -486,7 +487,7 @@ const SplashCursor = () => {
       }
 
       render(null);
-      requestAnimationFrame(update);
+      animationFrameId = requestAnimationFrame(update);
     }
 
     function resizeCanvas() {
@@ -657,67 +658,77 @@ const SplashCursor = () => {
       return { r, g, b };
     }
 
-    window.addEventListener('mousedown', (e) => {
-      let x = e.clientX;
-      let y = e.clientY;
-      let p = pointers[0];
-      p.down = true;
-      p.moved = false;
-      p.texcoordX = x / canvas.width;
-      p.texcoordY = 1.0 - y / canvas.height;
-      p.prevTexcoordX = p.texcoordX;
-      p.prevTexcoordY = p.texcoordY;
-      p.deltaX = 0;
-      p.deltaY = 0;
-      p.color = generateColor();
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      let x = e.clientX;
-      let y = e.clientY;
-      let p = pointers[0];
-      p.prevTexcoordX = p.texcoordX;
-      p.prevTexcoordY = p.texcoordY;
-      p.texcoordX = x / canvas.width;
-      p.texcoordY = 1.0 - y / canvas.height;
-      p.deltaX = p.texcoordX - p.prevTexcoordX;
-      p.deltaY = p.texcoordY - p.prevTexcoordY;
-      p.moved = Math.abs(p.deltaX) > 0 || Math.abs(p.deltaY) > 0;
-    });
-
-    window.addEventListener('touchstart', (e) => {
-      const x = e.touches[0].clientX;
-      const y = e.touches[0].clientY;
-      let p = pointers[0];
-      p.down = true;
-      p.moved = false;
-      p.texcoordX = x / canvas.width;
-      p.texcoordY = 1.0 - y / canvas.height;
-      p.prevTexcoordX = p.texcoordX;
-      p.prevTexcoordY = p.texcoordY;
-      p.deltaX = 0;
-      p.deltaY = 0;
-      p.color = generateColor();
-    });
-
-    window.addEventListener('touchmove', (e) => {
-      const x = e.touches[0].clientX;
-      const y = e.touches[0].clientY;
-      let p = pointers[0];
-      p.prevTexcoordX = p.texcoordX;
-      p.prevTexcoordY = p.texcoordY;
-      p.texcoordX = x / canvas.width;
-      p.texcoordY = 1.0 - y / canvas.height;
-      p.deltaX = p.texcoordX - p.prevTexcoordX;
-      p.deltaY = p.texcoordY - p.prevTexcoordY;
-      p.moved = Math.abs(p.deltaX) > 0 || Math.abs(p.deltaY) > 0;
-    }, { passive: false });
 
     initFramebuffers();
     update();
 
+    const onMouseDown = (e: MouseEvent) => {
+      let x = e.clientX;
+      let y = e.clientY;
+      let p = pointers[0];
+      p.down = true;
+      p.moved = false;
+      p.texcoordX = x / canvas.width;
+      p.texcoordY = 1.0 - y / canvas.height;
+      p.prevTexcoordX = p.texcoordX;
+      p.prevTexcoordY = p.texcoordY;
+      p.deltaX = 0;
+      p.deltaY = 0;
+      p.color = generateColor();
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      let x = e.clientX;
+      let y = e.clientY;
+      let p = pointers[0];
+      p.prevTexcoordX = p.texcoordX;
+      p.prevTexcoordY = p.texcoordY;
+      p.texcoordX = x / canvas.width;
+      p.texcoordY = 1.0 - y / canvas.height;
+      p.deltaX = p.texcoordX - p.prevTexcoordX;
+      p.deltaY = p.texcoordY - p.prevTexcoordY;
+      p.moved = Math.abs(p.deltaX) > 0 || Math.abs(p.deltaY) > 0;
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      let p = pointers[0];
+      p.down = true;
+      p.moved = false;
+      p.texcoordX = x / canvas.width;
+      p.texcoordY = 1.0 - y / canvas.height;
+      p.prevTexcoordX = p.texcoordX;
+      p.prevTexcoordY = p.texcoordY;
+      p.deltaX = 0;
+      p.deltaY = 0;
+      p.color = generateColor();
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      let p = pointers[0];
+      p.prevTexcoordX = p.texcoordX;
+      p.prevTexcoordY = p.texcoordY;
+      p.texcoordX = x / canvas.width;
+      p.texcoordY = 1.0 - y / canvas.height;
+      p.deltaX = p.texcoordX - p.prevTexcoordX;
+      p.deltaY = p.texcoordY - p.prevTexcoordY;
+      p.moved = Math.abs(p.deltaX) > 0 || Math.abs(p.deltaY) > 0;
+    };
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('touchstart', onTouchStart);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+
     return () => {
-      // Cleanup if needed
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
     };
   }, []);
 

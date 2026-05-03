@@ -1,0 +1,40 @@
+.infinite-menu-container {
+  position: relative; 
+  width: 100%; 
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+}
+
+#infinite-grid-menu-canvas {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.active-item-info {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  width: 100%;
+}
+
+.infinite-menu-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, rgba(2, 6, 23, 0.7) 100%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Custom hide scrollbars for cleaner look */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

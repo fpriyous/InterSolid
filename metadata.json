@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "InterSolid",
+  "description": "Portal kelas modern dengan fitur kalender, absen, voting, notulensi, aspirasi anonim, dan kenangan kelas yang saling terintegrasi.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

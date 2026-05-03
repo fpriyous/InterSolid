@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Serif+Display:ital@0;1&display=swap');
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
@@ -13,15 +14,49 @@
   :root {
     --background: #f2f7fc;
     --foreground: #1f2b36;
+    --tooltip-bg: #ffffff;
+    --tooltip-text: #1e293b;
   }
   
   .dark {
     --background: #0e161e;
     --foreground: #ddeaf2;
+    --tooltip-bg: #0f172a;
+    --tooltip-text: #ffffff;
   }
 
   body {
     background-color: var(--background);
     color: var(--foreground);
   }
+
+  .scroll-float-text {
+    font-size: clamp(1.6rem, 8vw, 10rem);
+  }
+}
+
+/* Tiptap Collaboration Cursor Styles */
+.collaboration-cursor__caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid #0d0d0d;
+  border-right: 2px solid #0d0d0d;
+  word-break: normal;
+  pointer-events: none;
+}
+
+.collaboration-cursor__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: normal;
+  user-select: none;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
 }

@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Vote, Trash2, Plus, CheckCircle2, Lock } from 'lucide-react';
+import { Vote, Trash2, Plus, CheckCircle2, Lock, Key } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, increment, query, orderBy, Timestamp, getDocs, writeBatch } from 'firebase/firestore';
+import { User } from 'firebase/auth';
 
 interface PollOption {
   id: string;
@@ -10,62 +13,126 @@ interface PollOption {
 interface Poll {
   id: string;
   question: string;
-  options: PollOption[];
   isActive: boolean;
   totalVotes: number;
+  authorId: string;
+  options?: PollOption[];
 }
 
-export default function Voting({ isAdmin }: { isAdmin: boolean }) {
-  const [polls, setPolls] = useState<Poll[]>(() => {
-    const saved = localStorage.getItem('IS_polls');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+
+export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User | null }) {
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [loading, setLoading] = useState(true);
   const [hasVoted, setHasVoted] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('IS_hasVoted');
     return saved ? JSON.parse(saved) : {};
   });
 
   const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''] });
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('IS_polls', JSON.stringify(polls));
-    localStorage.setItem('IS_hasVoted', JSON.stringify(hasVoted));
-  }, [polls, hasVoted]);
-
-  const addPoll = () => {
-    if (!newPoll.question || newPoll.options.some(o => !o)) return;
-    const id = 'v_' + Date.now();
-    const poll: Poll = {
-      id,
-      question: newPoll.question,
-      options: newPoll.options.map((o, i) => ({ id: 'o' + i, label: o, votes: 0 })),
-      isActive: true,
-      totalVotes: 0
-    };
-    setPolls([poll, ...polls]);
-    setNewPoll({ question: '', options: ['', ''] });
-  };
-
-  const handleVote = (pollId: string, optionId: string) => {
-    if (hasVoted[pollId]) return;
-    const newPolls = polls.map(p => {
-      if (p.id === pollId) {
-        return {
-          ...p,
-          totalVotes: p.totalVotes + 1,
-          options: p.options.map(o => o.id === optionId ? { ...o, votes: o.votes + 1 } : o)
-        };
+    const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const pollData: Poll[] = [];
+      for (const pollDoc of snapshot.docs) {
+        const p = { ...pollDoc.data() as any, id: pollDoc.id };
+        const optSnapshot = await getDocs(collection(db, 'polls', pollDoc.id, 'options'));
+        const options: any[] = [];
+        optSnapshot.forEach(o => options.push({ ...o.data() as any, id: o.id }));
+        p.options = options.sort((a, b) => (a.order || 0) - (b.order || 0));
+        pollData.push(p);
       }
-      return p;
+      setPolls(pollData);
+      setLoading(false);
     });
-    setPolls(newPolls);
-    setHasVoted({ ...hasVoted, [pollId]: true });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('IS_hasVoted', JSON.stringify(hasVoted));
+  }, [hasVoted]);
+
+  const handleAction = (type: 'delete', id: string) => {
+    if (!user) {
+      alert('Login Google dulu!');
+      return;
+    }
+    if (!isAdmin) {
+      alert('Fitur ini hanya untuk Admin. Silakan login admin di header.');
+      return;
+    }
+    setConfirmId(id);
   };
 
-  const deletePoll = (id: string) => {
-    if (!confirm('Hapus sesi voting ini?')) return;
-    setPolls(polls.filter(p => p.id !== id));
+  const addPoll = async () => {
+    if (!user || !newPoll.question || newPoll.options.some(o => !o)) return;
+    try {
+      const pollRef = await addDoc(collection(db, 'polls'), {
+        question: newPoll.question,
+        isActive: true,
+        totalVotes: 0,
+        authorId: user.uid,
+        createdAt: Timestamp.now()
+      });
+
+      const batch = writeBatch(db);
+      newPoll.options.forEach((opt, index) => {
+        const optRef = doc(collection(db, 'polls', pollRef.id, 'options'));
+        batch.set(optRef, {
+          label: opt,
+          votes: 0,
+          order: index
+        });
+      });
+      await batch.commit();
+
+      setNewPoll({ question: '', options: ['', ''] });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleVote = async (pollId: string, optionId: string) => {
+    if (!user) return alert('Silakan Login Google dulu untuk memilih!');
+    if (hasVoted[pollId]) return;
+    
+    try {
+      await updateDoc(doc(db, 'polls', pollId), {
+        totalVotes: increment(1)
+      });
+      await updateDoc(doc(db, 'polls', pollId, 'options', optionId), {
+        votes: increment(1)
+      });
+      setHasVoted({ ...hasVoted, [pollId]: true });
+    } catch (e: any) {
+      console.error("Vote error:", e);
+      alert("Gagal memilih: " + e.message);
+    }
+  };
+
+  const deletePoll = async (id: string) => {
+    setLoading(true);
+    try {
+      console.log("Deleting poll and its options:", id);
+      // Cleanup options subcollection
+      const batch = writeBatch(db);
+      const optsSnap = await getDocs(collection(db, 'polls', id, 'options'));
+      optsSnap.forEach(d => batch.delete(d.ref));
+      
+      // Delete main doc
+      batch.delete(doc(db, 'polls', id));
+      
+      await batch.commit();
+      setConfirmId(null);
+      alert('Polling berhasil dihapus.');
+    } catch (e: any) {
+      console.error("Delete poll error:", e);
+      alert('Gagal menghapus polling: ' + (e.message || "Izin ditolak oleh server"));
+      setConfirmId(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -79,15 +146,16 @@ export default function Voting({ isAdmin }: { isAdmin: boolean }) {
                   <h3 className="font-bold text-lg">{p.question}</h3>
                   <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-widest">{p.totalVotes} Suara Masuk</p>
                 </div>
-                {isAdmin && (
-                  <button onClick={() => deletePoll(p.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
-                    <Trash2 size={18}/>
-                  </button>
-                )}
+                <button 
+                  onClick={() => handleAction('delete', p.id)} 
+                  className="p-2 text-gray-300 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={18}/>
+                </button>
               </div>
 
               <div className="space-y-3">
-                {p.options.map((opt) => {
+                {p.options?.map((opt) => {
                   const percent = p.totalVotes > 0 ? Math.round((opt.votes / p.totalVotes) * 100) : 0;
                   const votedThis = hasVoted[p.id];
                   return (
@@ -132,9 +200,9 @@ export default function Voting({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <div className="space-y-6">
-        {isAdmin ? (
-          <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
-            <h4 className="font-bold text-sm mb-4">Buat Voting Baru</h4>
+        <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
+          <h4 className="font-bold text-sm mb-4">Buat Voting Baru</h4>
+          {user ? (
             <div className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold uppercase text-gray-400 block mb-1">Pertanyaan</label>
@@ -180,15 +248,42 @@ export default function Voting({ isAdmin }: { isAdmin: boolean }) {
                 Publikasikan Voting
               </button>
             </div>
-          </div>
-        ) : (
-          <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-2xl border border-blue-100 dark:border-blue-900/30 text-center">
-            <Lock size={24} className="mx-auto mb-3 text-blue-400" />
-            <p className="text-[10px] font-bold uppercase text-blue-500 tracking-widest mb-1">Akses Terbatas</p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">Gunakan PIN Admin untuk membuat sesi voting baru.</p>
-          </div>
-        )}
+          ) : (
+            <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl">
+              <Lock size={20} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login Google untuk membuat voting</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Custom Confirmation Modal */}
+      {confirmId && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Trash2 className="text-red-500" size={32} />
+            </div>
+            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Sesi voting dan seluruh data suara akan dihapus</p>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => setConfirmId(null)}
+                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+              >
+                faqeee
+              </button>
+              <button 
+                onClick={() => confirmId && deletePoll(confirmId)}
+                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+              >
+                reyal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,12 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
-import { RotateCw, Trash2, Plus, Users } from 'lucide-react';
+import { RotateCw, Trash2, Plus, Users, Lock } from 'lucide-react';
+import { User } from 'firebase/auth';
 
 const COLORS = ['#3a9ce5', '#1168b0', '#63b5ed', '#0d5290', '#9bcff4', '#1a82d4', '#c5e3f9', '#164a72', '#5eb3ee', '#0f3050'];
 
-export default function SpinWheel() {
+export default function SpinWheel({ user }: { user: User | null }) {
   const [members, setMembers] = useState<string[]>(() => {
     const saved = localStorage.getItem('IS_spinMembers');
-    return saved ? JSON.parse(saved) : ['Andi', 'Budi', 'Citra', 'Dewi', 'Eko'];
+    return saved ? JSON.parse(saved) : [
+      'Bhintank Mi\'thori Danial Firdaus', 'Dimas Ardiansyah Nur Ismail', 'Fatin Atikah Sandy', 
+      'Ixmel Kaisa Elfatio Mohammad', 'Mahrezia Labidi Maziyyah Bahar', 'Nur Fika Rayhanatul Firdausiyah', 
+      'Safira Fathia Arrozaqul Azzahrania', 'Siti Nur Rahmawati', 'Ahmaddin Oemar', 'Ananda Rizki Putravian', 
+      'Arina Abna Al Izza', 'Eugenia Ivana Aurellia Purnama', 'Faiza Syan Bintang Pradipa Al-Ashar', 
+      'Fauziyah Khansa Auliya', 'Kaisar El Kasyaf Hermawan', 'Khadijah Zahra Mumtaz', 'Laily Nur Izahrany', 
+      'Munjidah Amalia', 'Najwa Alicia Syarifudin', 'Nidaan Khafiyya', 'Priyous Farrel Dwi Herlambang', 
+      'Raniah Naurah Fauzan', 'Sabila Rahma Aulia', 'Shafiyyah Az-zahra', 'Shinta Anggraeni Trisnaningrum', 
+      'Zadin Aisyah Al Amin', 'Muhammad Naufal Fairuzudin', 'Rafa Nureka Rasyida', 'Ahmad Syarifil Maqom', 
+      'Maulana Izza Dien Sultan', 'Muhammad Harwin Wahyu Dinata', 'Viona Aulya Rahma'
+    ];
   });
   const [newMember, setNewMember] = useState('');
   const [spinning, setSpinning] = useState(false);
@@ -14,6 +25,7 @@ export default function SpinWheel() {
   const [angle, setAngle] = useState(0);
   const [groups, setGroups] = useState<string[][]>([]);
   const [groupCount, setGroupCount] = useState(3);
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'single' | 'all', index?: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -38,20 +50,23 @@ export default function SpinWheel() {
     const n = members.length || 1;
     const arc = (2 * Math.PI) / n;
 
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
     members.forEach((m, i) => {
-      const startAngle = angle + i * arc - Math.PI / 2;
+      const startAngle = i * arc - Math.PI / 2;
       const endAngle = startAngle + arc;
 
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, R, startAngle, endAngle);
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, R, startAngle, endAngle);
       ctx.fillStyle = COLORS[i % COLORS.length];
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.stroke();
 
       ctx.save();
-      ctx.translate(cx, cy);
       ctx.rotate(startAngle + arc / 2);
       ctx.textAlign = 'right';
       ctx.fillStyle = '#fff';
@@ -59,6 +74,7 @@ export default function SpinWheel() {
       ctx.fillText(m, R - 15, 0);
       ctx.restore();
     });
+    ctx.restore();
 
     // Center circle
     ctx.beginPath();
@@ -88,15 +104,16 @@ export default function SpinWheel() {
       const ease = 1 - Math.pow(1 - t, 4);
       
       const currentAngle = angle + totalRotation * ease;
-      setAngle(currentAngle);
+      const normalizedAngle = currentAngle % (Math.PI * 2);
+      setAngle(normalizedAngle);
 
       if (t < 1) {
         requestAnimationFrame(animate);
       } else {
         const n = members.length;
-        const normalizedAngle = ((currentAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
         const arc = (2 * Math.PI) / n;
-        const index = Math.floor((Math.PI * 2 - (normalizedAngle - Math.PI / 2) % (Math.PI * 2)) % (Math.PI * 2) / arc);
+        const stopAngle = (Math.PI * 2 - (normalizedAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+        const index = Math.floor(((stopAngle + Math.PI / 2) % (Math.PI * 2)) / arc) % n;
         setWinner(members[index]);
         setSpinning(false);
       }
@@ -152,8 +169,11 @@ export default function SpinWheel() {
                 type="number" 
                 min={2} 
                 max={10} 
-                value={groupCount}
-                onChange={e => setGroupCount(parseInt(e.target.value))}
+                value={isNaN(groupCount) ? '' : groupCount}
+                onChange={e => {
+                  const val = parseInt(e.target.value);
+                  setGroupCount(isNaN(val) ? 2 : val);
+                }}
                 className="w-16 px-3 py-1.5 text-xs rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none"
               />
               <button 
@@ -214,7 +234,7 @@ export default function SpinWheel() {
             {members.map((m, i) => (
               <div key={i} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl group hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
                 <span className="text-xs font-medium">{m}</span>
-                <button onClick={() => setMembers(members.filter((_, idx) => idx !== i))} className="text-gray-300 hover:text-red-500 transition-colors">
+                <button onClick={() => setConfirmDelete({ type: 'single', index: i })} className="text-gray-300 hover:text-red-500 transition-colors">
                   <Trash2 size={14}/>
                 </button>
               </div>
@@ -222,11 +242,65 @@ export default function SpinWheel() {
           </div>
 
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex gap-2">
-            <button onClick={() => setMembers([])} className="flex-1 py-1.5 text-[10px] font-bold text-gray-400 hover:bg-gray-50 rounded-lg">Kosongkan</button>
-            <button onClick={() => setMembers(['Andi', 'Budi', 'Citra', 'Dewi', 'Eko', 'Fani', 'Gilang', 'Hani', 'Irfan', 'Joko'])} className="flex-1 py-1.5 text-[10px] font-bold text-blue-500 hover:bg-blue-50 rounded-lg uppercase tracking-wider">Isi Contoh</button>
+            <button onClick={() => setConfirmDelete({ type: 'all' })} className="flex-1 py-1.5 text-[10px] font-bold text-gray-400 hover:bg-gray-50 rounded-lg">Kosongkan</button>
+        <button 
+          onClick={() => setMembers([
+            'Bhintank Mi\'thori Danial Firdaus', 'Dimas Ardiansyah Nur Ismail', 'Fatin Atikah Sandy', 
+            'Ixmel Kaisa Elfatio Mohammad', 'Mahrezia Labidi Maziyyah Bahar', 'Nur Fika Rayhanatul Firdausiyah', 
+            'Safira Fathia Arrozaqul Azzahrania', 'Siti Nur Rahmawati', 'Ahmaddin Oemar', 'Ananda Rizki Putravian', 
+            'Arina Abna Al Izza', 'Eugenia Ivana Aurellia Purnama', 'Faiza Syan Bintang Pradipa Al-Ashar', 
+            'Fauziyah Khansa Auliya', 'Kaisar El Kasyaf Hermawan', 'Khadijah Zahra Mumtaz', 'Laily Nur Izahrany', 
+            'Munjidah Amalia', 'Najwa Alicia Syarifudin', 'Nidaan Khafiyya', 'Priyous Farrel Dwi Herlambang', 
+            'Raniah Naurah Fauzan', 'Sabila Rahma Aulia', 'Shafiyyah Az-zahra', 'Shinta Anggraeni Trisnaningrum', 
+            'Zadin Aisyah Al Amin', 'Muhammad Naufal Fairuzudin', 'Rafa Nureka Rasyida', 'Ahmad Syarifil Maqom', 
+            'Maulana Izza Dien Sultan', 'Muhammad Harwin Wahyu Dinata', 'Viona Aulya Rahma'
+          ])} 
+          className="flex-1 py-1.5 text-[10px] font-bold text-blue-500 hover:bg-blue-50 rounded-lg uppercase tracking-wider"
+        >
+          Isi Nama Kelas
+        </button>
           </div>
         </div>
       </div>
+
+      {/* Custom Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Trash2 className="text-red-500" size={32} />
+            </div>
+            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
+              {confirmDelete.type === 'all' 
+                ? 'Seluruh daftar anggota akan dikosongkan' 
+                : 'Pilihan ini akan dihapus dari daftar'}
+            </p>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => setConfirmDelete(null)}
+                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+              >
+                faqeee
+              </button>
+              <button 
+                onClick={() => {
+                  if (confirmDelete.type === 'all') {
+                    setMembers([]);
+                  } else if (confirmDelete.index !== undefined) {
+                    setMembers(members.filter((_, idx) => idx !== confirmDelete.index));
+                  }
+                  setConfirmDelete(null);
+                }}
+                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+              >
+                reyal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "announcements": {
+      "title": "Announcement",
+      "description": "Class announcements",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "date": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "priority", "date", "authorId", "createdAt"]
+    },
+    "events": {
+      "title": "Calendar Event",
+      "description": "Events in the class calendar",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "genre": { "type": "string" },
+        "time": { "type": "string" },
+        "note": { "type": "string" },
+        "date": { "type": "string" },
+        "authorId": { "type": "string" }
+      },
+      "required": ["title", "genre", "date", "authorId"]
+    },
+    "notes": {
+      "title": "Meeting Note",
+      "description": "Meeting minutes and study materials",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "tag": { "type": "string" },
+        "date": { "type": "string" },
+        "authorId": { "type": "string" }
+      },
+      "required": ["title", "content", "tag", "date", "authorId"]
+    },
+    "polls": {
+      "title": "Poll",
+      "description": "Digital voting sessions",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "totalVotes": { "type": "integer" },
+        "authorId": { "type": "string" }
+      },
+      "required": ["question", "isActive", "totalVotes", "authorId"]
+    },
+    "aspirasi": {
+      "title": "Aspirasi",
+      "description": "Anonymous feedback and messages",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "sticker": { "type": "string" },
+        "likes": { "type": "integer" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["likes", "date", "createdAt"]
+    },
+    "absenTables": {
+      "title": "Attendance Table",
+      "description": "Table for attendance and dues tracking",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "authorId", "createdAt"]
+    },
+    "memories": {
+      "title": "Memory",
+      "description": "Shared class moments (images and videos)",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["image", "video"] },
+        "url": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "caption": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["type", "url", "userId", "createdAt", "likes"]
+    }
+  },
+  "firestore": {
+    "announcements": { "schema": "announcements", "description": "Global class announcements" },
+    "events": { "schema": "events", "description": "Shared calendar events" },
+    "notes": { "schema": "notes", "description": "Shared meeting notes" },
+    "polls": { "schema": "polls", "description": "Class polls" },
+    "aspirasi": { "schema": "aspirasi", "description": "Anonymous feedback" },
+    "absenTables": { "schema": "absenTables", "description": "Attendance tables" },
+    "absenTables/{tableId}/rows": { "schema": "object", "description": "Rows in attendance table" },
+    "absenTables/{tableId}/cols": { "schema": "object", "description": "Columns in attendance table" },
+    "memories": { "schema": "memories", "description": "Shared class moments" }
+  }
+}
