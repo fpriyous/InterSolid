@@ -718,7 +718,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
             <p className="text-[10px] font-black uppercase tracking-[0.8em] text-slate-400 font-bold">InterSolid Hub</p>
             <div className="w-1 h-1 bg-slate-400 rounded-full" />
          </div>
-         <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">© 2024 • DATA CONSISTENCY IS PRIORITY • NOSTALGIA.SYS</p>
+         <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">Est. 2025 • INTERCLASS • SOLID SOLID SOLID</p>
       </motion.div>
     </motion.div>
   );
