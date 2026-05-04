@@ -369,7 +369,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-[1160px] mx-auto p-4 md:p-8 relative z-10">
+      <main className="max-w-[1160px] mx-auto p-4 md:p-8 pb-32 md:pb-8 relative z-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={activePage}

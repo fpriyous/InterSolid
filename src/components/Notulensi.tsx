@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock } from 'lucide-react';
 import { db, storage, logPortalActivity } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, setDoc, where } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,10 +11,6 @@ import Underline from '@tiptap/extension-underline';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
-import Collaboration from '@tiptap/extension-collaboration';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
-import * as Y from 'yjs';
-import { WebsocketProvider } from 'y-websocket';
 import html2pdf from 'html2pdf.js';
 
 interface Note {
@@ -252,6 +248,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [activeUsers, setActiveUsers] = useState<any[]>([]);
+  const isConnected = true; // Simplified connection status
   const [showImageModal, setShowImageModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -282,67 +280,115 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   };
 
-  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [activeUsers, setActiveUsers] = useState<{ name: string, color: string }[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
+  // Presence effect (simple)
+  useEffect(() => {
+    if (!editingId || !user || !isAdding) return;
+    
+    const presenceRef = doc(collection(db, 'notes', editingId, 'presence'), user.uid);
+    const setPresence = async (isActive: boolean) => {
+      try {
+        await setDoc(presenceRef, {
+          name: user.displayName || 'Anonim',
+          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+          lastActive: Timestamp.now(),
+          isActive
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Presence error:', e);
+      }
+    };
 
-  const cursorColor = useRef('#' + Math.floor(Math.random() * 16777215).toString(16)).current;
+    setPresence(true);
+    const interval = setInterval(() => setPresence(true), 30000); // Heartbeat
+
+    // Clean up
+    return () => {
+      clearInterval(interval);
+      setPresence(false);
+    };
+  }, [editingId, user, isAdding]);
+
+  // Track active users from presence collection
+  useEffect(() => {
+    if (!editingId || !isAdding) return;
+
+    const q = query(collection(db, 'notes', editingId, 'presence'), where('isActive', '==', true));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const users: any[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        // Only show if active in last 2 minutes
+        if (data.lastActive?.toDate().getTime() > Date.now() - 120000) {
+          users.push(data);
+        }
+      });
+      setActiveUsers(users);
+    });
+
+    return () => unsubscribe();
+  }, [editingId, isAdding]);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // history is enabled by default in StarterKit
-      }),
+      StarterKit,
       Underline,
       Image,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
       Placeholder.configure({
-        placeholder: 'Tuliskan catatan Anda di sini...',
+        placeholder: 'Mulai mengetik catatan materi atau rapat di sini...',
       }),
-      ...(ydoc ? [
-        Collaboration.configure({
-          document: ydoc,
-        }),
-        CollaborationCursor.configure({
-          provider: provider as any,
-          user: {
-            name: user?.displayName || 'Anonim',
-            color: cursorColor,
-          },
-        }),
-      ] : []),
     ],
     content: '',
     editable: !selectedNote?.isLocked || isAdmin,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] p-6 leading-loose text-gray-700 dark:text-gray-200',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[500px] p-6 leading-relaxed text-gray-700 dark:text-gray-200 outline-none select-text cursor-text',
+        style: 'pointer-events: auto !important;'
       },
     },
-  }, [ydoc]);
+    onUpdate: ({ editor }) => {
+      if (isAdding && editingId) {
+        setSaveStatus('saving');
+      }
+    }
+  });
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
 
-  // Seeding effect
+  // Load existing content when editing
   useEffect(() => {
-    if (editor && provider && isConnected && editingId && ydoc) {
-      const fragment = ydoc.getXmlFragment('default');
-      if (fragment.length === 0) {
-        const note = notes.find(n => n.id === editingId);
-        if (note && note.htmlContent) {
-          editor.commands.setContent(note.htmlContent);
-        }
+    if (editor && isAdding && editingId) {
+      const note = notes.find(n => n.id === editingId);
+      if (note && note.htmlContent && editor.getHTML() === '<p></p>') {
+        editor.commands.setContent(note.htmlContent);
       }
     }
-  }, [editor, provider, isConnected, editingId, ydoc]);
+  }, [editor, isAdding, editingId, notes]);
+
+  // Handle remote updates (simple real-time)
+  useEffect(() => {
+    if (!editor || !editingId || !isAdding) return;
+
+    const unsubscribe = onSnapshot(doc(db, 'notes', editingId), (doc) => {
+      const data = doc.data();
+      if (data && data.htmlContent && data.updatedBy !== user?.uid) {
+        const currentHtml = editor.getHTML();
+        if (data.htmlContent !== currentHtml) {
+          // Only update if difference is significant to avoid cursor jumps
+          editor.commands.setContent(data.htmlContent, false);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [editor, editingId, isAdding, user]);
 
   // Auto-save effect
   useEffect(() => {
-    if (!editor || !isAdding || !editingId || !isConnected) return;
+    if (!editor || !isAdding || !editingId) return;
 
     let timeout: any;
     const handleUpdate = () => {
@@ -355,16 +401,16 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           await updateDoc(doc(db, 'notes', editingId), {
             content: text.substring(0, 200),
             htmlContent: html,
-            updatedAt: Timestamp.now()
+            updatedAt: Timestamp.now(),
+            updatedBy: user?.uid
           });
-          logPortalActivity('note_update', 'Autosave Catatan', user);
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 3000);
         } catch (e) {
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
         }
-      }, 2000);
+      }, 1500);
     };
 
     editor.on('update', handleUpdate);
@@ -372,80 +418,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       editor.off('update', handleUpdate);
       clearTimeout(timeout);
     };
-  }, [editor, isAdding, editingId, isConnected]);
-
-  // Track active users
-  useEffect(() => {
-    if (!provider) return;
-
-    const updateUsers = () => {
-      const states = provider.awareness.getStates();
-      const users: { name: string, color: string }[] = [];
-      states.forEach((state: any) => {
-        if (state.user) {
-          users.push(state.user);
-        }
-      });
-      setActiveUsers(users);
-    };
-
-    provider.awareness.on('change', updateUsers);
-    return () => {
-      provider.awareness.off('change', updateUsers);
-    };
-  }, [provider]);
-
-  // Manage collaboration provider
-  useEffect(() => {
-    if (!isAdding) {
-      if (provider) {
-        provider.destroy();
-        setProvider(null);
-      }
-      if (ydoc) {
-        setYdoc(null);
-      }
-      return;
-    }
-
-    const roomId = editingId || 'new-note-session-' + (user?.uid || 'guest');
-    const newYdoc = new Y.Doc();
-    
-    // Ensure we don't have double slashes if host ends with slash (rare)
-    const host = window.location.host.replace(/\/$/, '');
-    const wsUrl = window.location.protocol === 'https:' 
-      ? `wss://${host}/collaboration` 
-      : `ws://${host}/collaboration`;
-    
-    console.log(`[Collaboration] Attempting connection to: ${wsUrl}/${roomId}`);
-    const newProvider = new WebsocketProvider(wsUrl, roomId, newYdoc);
-    
-    newProvider.on('status', ({ status }: { status: string }) => {
-      console.log(`[Collaboration] Status changed to: ${status}`);
-      setIsConnected(status === 'connected');
-    });
-
-    newProvider.on('sync', (isSynced: boolean) => {
-      console.log(`[Collaboration] Synced: ${isSynced}`);
-      if (isSynced) setIsConnected(true);
-    });
-
-    newProvider.on('connection-error', (event: any) => {
-      console.error('[Collaboration] Connection error details:', event);
-      // We can retry or show a message
-    });
-
-    newProvider.on('connection-close', (event: any) => {
-      console.warn('[Collaboration] Port closed:', event);
-    });
-
-    setYdoc(newYdoc);
-    setProvider(newProvider);
-
-    return () => {
-      newProvider.destroy();
-    };
-  }, [isAdding, editingId]);
+  }, [editor, isAdding, editingId, user]);
 
   const filteredNotes = notes.filter(n => 
     n.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -699,8 +672,22 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   <div className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-900/30'} border rounded-full transition-colors`}>
                     <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-orange-400'}`} />
                     <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'} tracking-tighter`}>
-                      {isConnected ? 'Live' : 'Connecting...'}
+                      {isConnected ? 'LIVE SYNC' : 'Connecting...'}
                     </span>
+                  </div>
+
+                  {/* Presence avatars */}
+                  <div className="flex -space-x-1.5 overflow-hidden">
+                    {activeUsers.map((u, i) => (
+                      <div 
+                        key={i} 
+                        className="w-6 h-6 md:w-7 md:h-7 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all"
+                        style={{ backgroundColor: u.color }}
+                        title={u.name}
+                      >
+                        {u.name.charAt(0).toUpperCase()}
+                      </div>
+                    ))}
                   </div>
 
                   <select 

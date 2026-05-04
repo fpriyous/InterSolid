@@ -217,13 +217,14 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
     // 1. Fetch Next Events
     const eventsQuery = query(
       collection(db, 'events'),
+      where('date', '>=', today),
       orderBy('date', 'asc'),
       limit(3)
     );
 
     const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setNextEvents(data.filter((e: any) => e.date >= today));
+      setNextEvents(data);
     });
 
     // 2. Fetch Latest Announcement
@@ -323,15 +324,16 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
              <Clock size={10} /> {new Date().toLocaleTimeString('id-id', { hour: '2-digit', minute: '2-digit' })} WIB • LOCAL HOST VERIFIED
           </p>
         </div>
-
-        <div className="flex items-center justify-between md:justify-end gap-6 md:gap-12 bg-white dark:bg-white/5 p-4 rounded-3xl md:bg-transparent md:p-0 border border-slate-100 dark:border-white/5 md:border-none">
+        <div 
+          className="flex items-center justify-between md:justify-end gap-6 md:gap-12 bg-white/80 dark:bg-[#1a252f]/60 backdrop-blur-xl p-4 rounded-3xl md:p-5 border border-slate-200 dark:border-white/10 shadow-lg"
+        >
            {[
              { label: 'Files', val: stats.totalMemories, suffix: 'MB', color: 'text-slate-800 dark:text-white' },
              { label: 'Agenda', val: stats.totalEvents, suffix: 'UNIT', color: 'text-slate-800 dark:text-white' },
              { label: 'Latensi', val: `${latency}ms`, suffix: 'PING', color: getLatencyColor(latency) }
            ].map((stat, i) => (
              <div key={i} className="flex flex-col items-center md:items-end">
-                <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{stat.label}</span>
+                <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">{stat.label}</span>
                 <div className="flex items-baseline gap-0.5 md:gap-1">
                   <span className={`text-lg md:text-2xl font-black tracking-tighter leading-none ${stat.color}`}>{stat.val}</span>
                   <span className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase">{stat.suffix}</span>
@@ -343,48 +345,50 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
 
       {/* 02. CORE MISSION DISPLAY */}
       <motion.section variants={itemVariants} className="relative">
-        <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-950 rounded-[48px] border border-slate-200 dark:border-white/5 shadow-2xl p-1">
-          <div className="grid grid-cols-1 lg:grid-cols-12">
-            {/* Perspective Side */}
-            <div className="lg:col-span-7 relative p-12 md:p-16 flex flex-col justify-center min-h-[440px] overflow-hidden rounded-[44px]">
-               <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-blue-500 to-indigo-800 dark:from-blue-700 dark:via-blue-600 dark:to-slate-900" />
-               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_50%_-20%,rgba(255,255,255,0.4),transparent)]" />
+        <div className="relative overflow-hidden bg-white dark:bg-[#0a0f18] rounded-[56px] border border-slate-200 dark:border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] p-1">
+          <div className="flex flex-col">
+            {/* Perspective Side - Full Width Hero */}
+            <div className="relative p-12 md:p-24 flex flex-col justify-center min-h-[460px] md:min-h-[600px] overflow-hidden rounded-[48px]">
+               <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-700 dark:from-blue-600 dark:via-blue-800 dark:to-slate-900" />
+               <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/20 to-transparent" />
+               <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_-20%,rgba(255,255,255,0.4),transparent)]" />
+               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-[0.03] pointer-events-none" />
                
-               <div className="relative z-10">
-                  <div className="flex items-center gap-4 mb-8">
-                    <div className="px-3 py-1 bg-white/20 backdrop-blur-xl border border-white/20 rounded-full text-[8px] font-black uppercase tracking-[0.3em] text-white">
+               <div className="relative z-10 w-full max-w-5xl">
+                  <div className="flex items-center gap-4 mb-12">
+                    <div className="px-5 py-2 bg-white/20 backdrop-blur-2xl border border-white/30 rounded-full text-[10px] font-black uppercase tracking-[0.4em] text-white">
                        Arsip Utama
                     </div>
-                    <div className="w-px h-4 bg-white/20" />
-                    <span className="text-[8px] font-bold text-white/60 uppercase tracking-widest">Version 2.0.4</span>
+                    <div className="w-px h-6 bg-white/30" />
+                    <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">Version 2.0.4</span>
                   </div>
                   
-                  <div className="overflow-hidden mb-8">
+                  <div className="overflow-hidden mb-12">
                     <motion.h2 
                       initial={{ y: "100%" }}
                       animate={{ y: 0 }}
-                      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                      className="text-7xl md:text-9xl font-black tracking-tighter leading-[0.75] text-white"
+                      transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                      className="text-8xl md:text-[160px] font-black tracking-tighter leading-[0.7] text-white"
                     >
                       Inter<br/>Solid.
                     </motion.h2>
                   </div>
                   
-                  <p className="text-white/60 text-sm md:text-base font-medium max-w-sm mb-12 leading-relaxed">
+                  <p className="text-white/90 text-lg md:text-2xl font-medium max-w-2xl mb-16 leading-relaxed">
                     Pusat repositori digital untuk sinkronisasi data kegiatan, dokumentasi historis, dan koordinasi operasional InterSolid.
                   </p>
 
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap gap-8">
                     <button 
                       onClick={() => setActivePage('notulensi')}
-                      className="group flex items-center gap-4 px-10 py-5 bg-white text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] hover:bg-blue-50 transition-all shadow-xl shadow-blue-500/20 dark:shadow-blue-900/40 active:scale-95"
+                      className="group flex items-center gap-6 px-14 py-7 bg-white text-blue-700 rounded-3xl font-black text-[12px] uppercase tracking-[0.4em] hover:bg-white/95 transition-all shadow-2xl shadow-blue-900/40 active:scale-95"
                     >
                       Akses Notulensi
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                      <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                     <button 
                       onClick={() => setActivePage('kalender')}
-                      className="px-10 py-5 bg-white/10 backdrop-blur-xl border border-white/10 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] hover:bg-white/20 transition-all active:scale-95"
+                      className="px-14 py-7 bg-white/10 backdrop-blur-2xl border border-white/20 text-white rounded-3xl font-black text-[12px] uppercase tracking-[0.4em] hover:bg-white/20 transition-all active:scale-95"
                     >
                       Jadwal Agenda
                     </button>
@@ -392,20 +396,20 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                </div>
             </div>
 
-            {/* Information Hub */}
-            <div className="lg:col-span-12 p-8 md:p-12 grid grid-cols-1 md:grid-cols-2 gap-10 bg-white dark:bg-[#0f172a] transition-colors border-t border-slate-100 dark:border-white/5">
-              <div className="space-y-10">
+            {/* Information Hub - Distinct Block */}
+            <div className="p-10 md:p-24 grid grid-cols-1 lg:grid-cols-2 gap-20 bg-white dark:bg-[#0b121e] transition-colors border-t border-slate-100 dark:border-white/5">
+              <div className="space-y-16">
                 {/* Warta snippet */}
                 {latestAnnouncement && (
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-3">
-                       <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                       <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Warta Terakhir</span>
-                       <div className="flex-1 h-px bg-slate-100 dark:bg-white/5" />
+                  <div className="space-y-10">
+                    <div className="flex items-center gap-6">
+                       <div className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
+                       <span className="text-[12px] font-black uppercase tracking-[0.6em] text-blue-600 dark:text-blue-400">Warta Terakhir</span>
+                       <div className="flex-1 h-px bg-slate-200/60 dark:bg-white/10" />
                     </div>
                     <div className="group/ann cursor-pointer" onClick={() => setActivePage('pengumuman')}>
-                      <h3 className="text-3xl font-black tracking-tight group-hover/ann:text-blue-500 transition-colors uppercase leading-none text-slate-800 dark:text-white">{latestAnnouncement.title}</h3>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-3 mt-4 leading-relaxed font-semibold">
+                      <h3 className="text-5xl md:text-6xl font-black tracking-tighter group-hover/ann:text-blue-600 transition-colors uppercase leading-[0.85] text-slate-900 dark:text-white">{latestAnnouncement.title}</h3>
+                      <p className="text-xl text-slate-600 dark:text-slate-400 line-clamp-3 mt-8 leading-relaxed font-medium">
                         {latestAnnouncement.content}
                       </p>
                     </div>
@@ -413,45 +417,79 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                 )}
 
                 {/* Next immediate event */}
-                <div className="space-y-6 pt-12 border-t border-slate-100 dark:border-white/5">
+                <div className="space-y-10 pt-12 border-t border-slate-200 dark:border-white/10">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Agenda Terdekat</span>
-                    <span className="text-[9px] font-bold text-blue-500 uppercase">Syncing...</span>
+                    <span className="text-[11px] font-black uppercase tracking-[0.6em] text-blue-600 dark:text-blue-400">Agenda Terdekat</span>
+                    <div className="flex items-center gap-2.5">
+                       <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                       <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">LIVE SYNC</span>
+                    </div>
                   </div>
-                  {nextEvents[0] ? (
-                    <div className="flex items-center gap-6 p-5 rounded-3xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 cursor-pointer hover:bg-slate-100 dark:hover:bg-white/[0.08] hover:border-blue-500/50 transition-all group/ev" onClick={() => setActivePage('kalender')}>
-                      <div className="flex flex-col items-center shrink-0">
-                         <span className="text-[11px] font-black text-blue-500 uppercase tracking-tighter">{new Date(nextEvents[0].date).toLocaleDateString('id-ID', { month: 'short' })}</span>
-                         <span className="text-4xl font-black tracking-tighter leading-none text-slate-800 dark:text-white">{new Date(nextEvents[0].date).getDate()}</span>
-                      </div>
-                      <div className="h-12 w-px bg-slate-200 dark:bg-white/10" />
-                      <div className="flex-1">
-                        <h4 className="font-black text-sm uppercase tracking-tight text-slate-800 dark:text-white group-hover/ev:text-blue-400 transition-colors">{nextEvents[0].title}</h4>
-                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
-                           <Clock size={10} /> {nextEvents[0].time || 'TBA'} • {nextEvents[0].genre || 'Resmi'}
-                        </p>
-                      </div>
+                  {nextEvents.length > 0 ? (
+                    <div className="space-y-4">
+                      {nextEvents.slice(0, 3).map((event: any, idx) => (
+                        <motion.div 
+                          key={event.id}
+                          initial={{ x: -20, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: idx * 0.1 }}
+                          className="flex items-center gap-6 p-6 rounded-[32px] bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 cursor-pointer hover:bg-blue-50/50 dark:hover:bg-white/[0.06] hover:border-blue-300 dark:hover:border-blue-500/30 transition-all group/ev shadow-md hover:shadow-xl dark:shadow-none" 
+                          onClick={() => setActivePage('kalender')}
+                        >
+                          <div className="flex flex-col items-center shrink-0 min-w-[60px]">
+                             <span className="text-[11px] font-black text-blue-600 uppercase tracking-tighter">{new Date(event.date).toLocaleDateString('id-ID', { month: 'short' })}</span>
+                             <span className="text-4xl font-black tracking-tighter leading-none text-slate-900 dark:text-white">{new Date(event.date).getDate()}</span>
+                          </div>
+                          <div className="h-12 w-px bg-slate-200 dark:bg-white/10" />
+                          <div className="flex-1">
+                            <h4 className="font-black text-lg uppercase tracking-tight text-slate-900 dark:text-white group-hover/ev:text-blue-600 transition-colors leading-tight line-clamp-1">{event.title}</h4>
+                            <div className="flex items-center gap-3 mt-2">
+                               <p className="text-[9px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-[0.3em] flex items-center gap-1.5">
+                                  <Clock size={12} className="text-blue-600" /> {event.time || 'TBA'}
+                               </p>
+                               <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+                               <p className="text-[9px] text-slate-500 dark:text-slate-500 font-black uppercase tracking-[0.3em]">
+                                  {event.genre || 'UMUM'}
+                               </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
                     </div>
                   ) : (
-                    <div className="p-8 rounded-3xl border border-dashed border-slate-200 dark:border-white/10 text-center">
-                       <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Tidak ada record aktif</p>
+                    <div className="p-12 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-white/10 bg-white/20 dark:bg-white/[0.01] text-center">
+                       <p className="text-[11px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.6em]">Tidak ada record aktif</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="mt-12 pt-12 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
-                 <div className="flex -space-x-2">
-                   {[1,2,3,4,5].map(i => (
-                     <div key={i} className="w-11 h-11 rounded-xl border-2 border-white dark:border-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                        <UserIcon size={16} className="text-slate-400 dark:text-slate-500" />
-                     </div>
-                   ))}
-                 </div>
-                 <div className="text-right">
-                    <p className="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-[0.2em]">{stats.activityIndex} Aktivitas Tercatat</p>
-                    <p className="text-[8px] font-black text-emerald-500 uppercase tracking-[0.4em] mt-1 italic">Indeks Sistem: Real-time</p>
-                 </div>
+              <div className="flex flex-col justify-between">
+                <div className="hidden md:block">
+                  {/* Decorative element for balance */}
+                  <div className="w-full aspect-square max-h-[300px] opacity-10 dark:opacity-20 pointer-events-none">
+                     <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" className="w-full h-full fill-blue-500">
+                        <path d="M44.7,-76.4C58,-69.2,69.2,-58,76.4,-44.7C83.6,-31.4,86.7,-15.7,85.6,-0.6C84.5,14.5,79.2,28.9,71.1,41.4C63,53.8,52.1,64.3,39.3,71.5C26.5,78.7,11.8,82.5,-3.1,87.9C-18,93.4,-33.2,100.4,-45.5,95.5C-57.7,90.6,-67.1,73.8,-74.6,58.3C-82.1,42.8,-87.6,28.5,-89.7,13.6C-91.8,-1.3,-90.4,-16.8,-84.9,-30.9C-79.3,-45,-69.6,-57.7,-57.1,-65.4C-44.7,-73.2,-29.4,-76,-13.7,-81.4C2,-86.8,17.7,-94.7,33.3,-92.9C48.9,-91.1,64.4,-79.6,44.7,-76.4Z" transform="translate(100 100)" />
+                     </svg>
+                  </div>
+                </div>
+
+                <div className="mt-12 md:mt-0 pt-10 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+                   <div className="flex -space-x-3">
+                     {[1,2,3,4,5].map(i => (
+                       <div key={i} className="w-12 h-12 rounded-2xl border-2 border-white dark:border-[#0b121f] bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-lg transition-transform hover:-translate-y-1 hover:z-20">
+                          <UserIcon size={18} className="text-slate-400 dark:text-slate-500" />
+                       </div>
+                     ))}
+                   </div>
+                   <div className="text-right">
+                      <p className="text-[14px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">{stats.activityIndex} Aktivitas Tercatat</p>
+                      <div className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.5em] mt-2 flex items-center justify-end gap-2">
+                         <div className="w-1 h-1 bg-emerald-500 rounded-full animate-ping" />
+                         INDEKS SISTEM: REAL-TIME
+                      </div>
+                   </div>
+                </div>
               </div>
             </div>
           </div>

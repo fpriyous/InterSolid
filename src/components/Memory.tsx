@@ -328,44 +328,33 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
       setUploadStatus('uploading');
       
-      // Official Cloudflare R2 Upload via our Backend
+      // Direct Cloudinary Upload (Serverless-friendly)
+      // This uses unsigned presets for direct-from-client uploads
+      const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'ddjqzaybe').trim();
+      const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'intersolid_unsigned').trim();
+      
+      const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${isImage ? 'image' : 'video'}/upload`;
+      
       const formData = new FormData();
-      formData.append('file', fileToUpload, selectedFile.name);
+      formData.append('file', fileToUpload);
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder', 'intersolid_memories');
 
       setUploadProgress(60);
       
-      // Implement a timeout for the fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds timeout
-
       try {
-        const response = await fetch('/api/upload', {
+        const response = await fetch(cloudinaryUrl, {
           method: 'POST',
-          body: formData,
-          signal: controller.signal
+          body: formData
         });
-        clearTimeout(timeoutId);
 
-        const contentType = response.headers.get('content-type');
         if (!response.ok) {
-          if (contentType && contentType.includes('application/json')) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Server Error ${response.status}`);
-          } else {
-            const text = await response.text();
-            console.error('[Upload] Server error response:', text.substring(0, 500));
-            throw new Error(`Server error (${response.status}): Tidak dapat menghubungi Cloudinary. Pastikan internet lancar.`);
-          }
-        }
-
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          console.error('[Upload] Expected JSON but got:', text.substring(0, 500));
-          throw new Error('Server mengirimkan format data yang salah (Bukan JSON). Coba segarkan halaman.');
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || `Cloudinary Error ${response.status}`);
         }
 
         const result = await response.json();
-        const downloadURL = result.url;
+        const downloadURL = result.secure_url;
         const publicId = result.public_id;
         setUploadProgress(90);
 

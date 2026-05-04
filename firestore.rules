@@ -58,6 +58,11 @@ service cloud.firestore {
         resource.data.authorId == request.auth.uid && 
         resource.data.get('isLocked', false) == false
       );
+
+      match /presence/{userId} {
+        allow read: if true;
+        allow write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     match /polls/{id} {
