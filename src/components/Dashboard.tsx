@@ -223,19 +223,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
       const upcoming = data
         .filter((e: any) => {
           if (!e.date) return false;
-          // Bandingkan string YYYY-MM-DD
+          // Normalisasi dan bandingkan (YYYY-MM-DD)
           return e.date >= today;
         })
         .sort((a: any, b: any) => a.date.localeCompare(b.date))
         .slice(0, 3);
 
-      console.log(`[Dashboard] Agenda Debug:`, {
-        totalDocs: data.length,
-        todayStr: today,
-        sampleDates: data.slice(0, 2).map((d: any) => d.date),
-        filteredCount: upcoming.length
-      });
-      
+      console.log(`[Dashboard] Agenda Sync: Found ${data.length} total, filtered ${upcoming.length} upcoming.`);
       setNextEvents(upcoming);
     }, (error) => {
       console.error("[Dashboard] Event sync error:", error);
@@ -454,7 +448,17 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                           onClick={() => setActivePage('kalender')}
                         >
                           <div className="flex flex-col items-center shrink-0 min-w-[60px]">
-                             <span className="text-[11px] font-black text-blue-600 uppercase tracking-tighter">{new Date(event.date).toLocaleDateString('id-ID', { month: 'short' })}</span>
+                             <span className="text-[11px] font-black text-blue-600 uppercase tracking-tighter">
+                               {(() => {
+                                 const today = new Date().toISOString().split('T')[0];
+                                 const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                                 const nextDay = new Date(Date.now() + 172800000).toISOString().split('T')[0];
+                                 if (event.date === today) return "HARI INI";
+                                 if (event.date === tomorrow) return "BESOK";
+                                 if (event.date === nextDay) return "LUSA";
+                                 return new Date(event.date).toLocaleDateString('id-ID', { month: 'short' });
+                               })()}
+                             </span>
                              <span className="text-4xl font-black tracking-tighter leading-none text-slate-900 dark:text-white">{new Date(event.date).getDate()}</span>
                           </div>
                           <div className="h-12 w-px bg-slate-200 dark:bg-white/10" />
