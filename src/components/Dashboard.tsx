@@ -223,7 +223,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
       const upcoming = data
         .filter((e: any) => {
           if (!e.date) return false;
-          // Normalisasi dan bandingkan (YYYY-MM-DD)
+          // Bandingkan string YYYY-MM-DD
           return e.date >= today;
         })
         .sort((a: any, b: any) => a.date.localeCompare(b.date))

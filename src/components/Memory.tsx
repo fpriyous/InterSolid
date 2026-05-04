@@ -361,9 +361,9 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           });
 
           if (message.toLowerCase().includes("preset")) {
-            throw new Error(`PRESET SALAH: Sistem mencoba memakai '${uploadPreset}'. 
-            ID ini TIDAK DITEMUKAN di Cloudinary. 
-            SOLUSI: Klik ikon 'KOTAK COPY' di sebelah nama 'intersolid Unsigned' pada foto yang Anda kirim, lalu paste ke Vercel.`);
+            throw new Error(`PRESET TIDAK DITEMUKAN: Cloudinary menolak ID '${uploadPreset}'. 
+            SOLUSI: Silakan cek di Cloudinary > Settings > Upload. 
+            PASTIKAN ID yang tertulis di kolom paling kanan (yang ada ikon kotak copy-nya) adalah benar-benar 'intersolid'.`);
           }
           throw new Error(message);
         }
