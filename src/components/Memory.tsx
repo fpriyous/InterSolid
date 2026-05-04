@@ -333,6 +333,8 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'ddjqzaybe').trim();
       const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'intersolid_unsigned').trim();
       
+      console.log(`[Cloudinary Config] Cloud: ${cloudName}, Preset: ${uploadPreset}`);
+      
       const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${isImage ? 'image' : 'video'}/upload`;
       
       const formData = new FormData();
@@ -350,7 +352,20 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error?.message || `Cloudinary Error ${response.status}`);
+          const message = errorData.error?.message || `Cloudinary Error ${response.status}`;
+          
+          console.error('[Cloudinary Debug]', {
+            cloudName,
+            presetUsed: uploadPreset,
+            fullError: errorData
+          });
+
+          if (message.toLowerCase().includes("preset")) {
+            throw new Error(`PRESET SALAH: Sistem mencoba memakai '${uploadPreset}'. 
+            ID ini TIDAK DITEMUKAN di Cloudinary. 
+            SOLUSI: Klik ikon 'KOTAK COPY' di sebelah nama 'intersolid Unsigned' pada foto yang Anda kirim, lalu paste ke Vercel.`);
+          }
+          throw new Error(message);
         }
 
         const result = await response.json();

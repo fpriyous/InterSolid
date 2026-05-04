@@ -214,17 +214,31 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
     
-    // 1. Fetch Next Events
-    const eventsQuery = query(
-      collection(db, 'events'),
-      where('date', '>=', today),
-      orderBy('date', 'asc'),
-      limit(3)
-    );
-
+    // 1. Fetch Next Events - Robust: fetch all and filter in memory to avoid index issues
+    const eventsQuery = query(collection(db, 'events'));
     const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setNextEvents(data);
+      
+      // Filter & Sort In-Memory
+      const upcoming = data
+        .filter((e: any) => {
+          if (!e.date) return false;
+          // Bandingkan string YYYY-MM-DD
+          return e.date >= today;
+        })
+        .sort((a: any, b: any) => a.date.localeCompare(b.date))
+        .slice(0, 3);
+
+      console.log(`[Dashboard] Agenda Debug:`, {
+        totalDocs: data.length,
+        todayStr: today,
+        sampleDates: data.slice(0, 2).map((d: any) => d.date),
+        filteredCount: upcoming.length
+      });
+      
+      setNextEvents(upcoming);
+    }, (error) => {
+      console.error("[Dashboard] Event sync error:", error);
     });
 
     // 2. Fetch Latest Announcement
@@ -344,11 +358,14 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
       </div>
 
       {/* 02. CORE MISSION DISPLAY */}
-      <motion.section variants={itemVariants} className="relative">
-        <div className="relative overflow-hidden bg-white dark:bg-[#0a0f18] rounded-[56px] border border-slate-200 dark:border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] p-1">
+      <motion.section 
+        variants={itemVariants} 
+        className="relative -mr-4 md:-mr-10 lg:-mr-16"
+      >
+        <div className="relative overflow-hidden bg-white dark:bg-[#0a0f18] rounded-l-[56px] md:rounded-[56px] border border-slate-200 dark:border-white/10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] dark:shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] p-1">
           <div className="flex flex-col">
             {/* Perspective Side - Full Width Hero */}
-            <div className="relative p-12 md:p-24 flex flex-col justify-center min-h-[460px] md:min-h-[600px] overflow-hidden rounded-[48px]">
+            <div className="relative p-12 md:p-24 flex flex-col justify-center min-h-[460px] md:min-h-[600px] overflow-hidden rounded-l-[48px] md:rounded-[48px]">
                <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-700 dark:from-blue-600 dark:via-blue-800 dark:to-slate-900" />
                <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/20 to-transparent" />
                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_-20%,rgba(255,255,255,0.4),transparent)]" />
@@ -414,12 +431,12 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                       </p>
                     </div>
                   </div>
-                )}
+                )} 
 
                 {/* Next immediate event */}
                 <div className="space-y-10 pt-12 border-t border-slate-200 dark:border-white/10">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-[0.6em] text-blue-600 dark:text-blue-400">Agenda Terdekat</span>
+                    <span className="text-[11px] font-black uppercase tracking-[0.6em] text-emerald-600 dark:text-emerald-400">Agenda Terdekat</span>
                     <div className="flex items-center gap-2.5">
                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                        <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">LIVE SYNC</span>
