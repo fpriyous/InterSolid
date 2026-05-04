@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Download, Table, Lock, Check, X, ArrowRight } from 'lucide-react';
+import { Plus, Trash2, Download, Table, Lock, Unlock, Check, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { 
@@ -36,6 +36,8 @@ interface TableData {
   id: string;
   name: string;
   authorId: string;
+  isLocked?: boolean;
+  createdAt?: Timestamp;
 }
 
 export default function List({ isAdmin, user }: { isAdmin: boolean, user: User | null }) {
@@ -125,7 +127,6 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   }, [activeTableId]);
 
   const createTable = async () => {
-    if (!isAdmin) return alert('Hanya admin yang bisa membuat tabel!');
     if (!user) return alert('Anda harus Login Google terlebih dahulu untuk bisa menyimpan data!');
     if (!newTableName.trim()) return alert('Nama tabel tidak boleh kosong!');
 
@@ -135,6 +136,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       const docRef = await addDoc(tablesRef, {
         name: newTableName.trim(),
         authorId: user.uid,
+        isLocked: false,
         createdAt: Timestamp.now()
       });
 
@@ -146,6 +148,17 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       alert('Gagal membuat tabel: ' + (e.message || e.toString()));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleLock = async (tableId: string, currentStatus: boolean) => {
+    if (!isAdmin) return;
+    try {
+      await updateDoc(doc(db, 'absenTables', tableId), {
+        isLocked: !currentStatus
+      });
+    } catch (e: any) {
+      alert('Gagal mengubah status kunci: ' + e.message);
     }
   };
 
@@ -171,7 +184,6 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       await batch.commit();
       setActiveTableId('');
       setConfirmDelete(null);
-      alert('Tabel berhasil dihapus.');
     } catch (e: any) {
       console.error("Delete table error:", e);
       alert('Gagal menghapus tabel: ' + (e.message || e.toString()));
@@ -182,6 +194,9 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const deleteRow = async (rowId: string) => {
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
+    
     try {
       await deleteDoc(doc(db, 'absenTables', activeTableId, 'rows', rowId));
       setConfirmDelete(null);
@@ -193,14 +208,16 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const addRow = async () => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menambah baris!');
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
     if (!user) return alert('Login Google dulu!');
     if (!newRowName || !activeTableId) return;
     try {
       await addDoc(collection(db, 'absenTables', activeTableId, 'rows'), {
         name: newRowName,
         checks: {},
-        order: rows.length
+        order: rows.length,
+        createdAt: Timestamp.now()
       });
       setNewRowName('');
     } catch (e: any) {
@@ -209,7 +226,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const addClassRows = async () => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menambah baris otomatis!');
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
     if (!user) return alert('Login Google dulu!');
     if (!activeTableId) return;
     const names = [
@@ -228,7 +246,12 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       const batch = writeBatch(db);
       names.forEach((name, i) => {
         const ref = doc(collection(db, 'absenTables', activeTableId, 'rows'));
-        batch.set(ref, { name, checks: {}, order: rows.length + i });
+        batch.set(ref, { 
+          name, 
+          checks: {}, 
+          order: rows.length + i,
+          createdAt: Timestamp.now() 
+        });
       });
       await batch.commit();
     } catch (e) {
@@ -237,11 +260,25 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const toggleCheck = async (rowId: string, colId: string, currentVal: boolean) => {
-    if (!isAdmin) return alert('Hanya admin yang bisa mengisi atau mengedit data!');
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) return alert('Tabel ini telah dikunci oleh Admin.');
+    if (!user) return alert('Login Google untuk mengisi data.');
+    
     try {
       await updateDoc(doc(db, 'absenTables', activeTableId, 'rows', rowId), {
         [`checks.${colId}`]: !currentVal
       });
+
+      // Log activity for chart
+      addDoc(collection(db, 'table_activity'), {
+        tableId: activeTableId,
+        rowId,
+        colId,
+        value: !currentVal,
+        userId: user.uid,
+        userName: user.displayName || 'Anonim',
+        createdAt: Timestamp.now()
+      }).catch(console.error);
     } catch (e: any) {
       console.error("Error updating check:", e);
       alert("Gagal mengupdate data: " + (e.message || e.toString()));
@@ -249,7 +286,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const addColumn = async () => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menambah kolom!');
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
     if (!user) return alert('Login Google dulu!');
     if (!newColumnLabel.trim() || !activeTableId) return;
     try {
@@ -298,24 +336,26 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-serif text-4xl font-bold mb-2">Daftar List</h2>
-        <p className="text-sm text-gray-400">Buat tabel custom untuk absensi, pembayaran, atau ceklis apapun</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h2 className="font-serif text-3xl md:text-4xl font-bold mb-2">Daftar List</h2>
+          <p className="text-xs md:text-sm text-gray-400">Buat tabel custom untuk absensi, pembayaran, atau ceklis apapun</p>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <button 
           onClick={() => setIsCreatingTable(true)}
-          className="px-6 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20"
+          className="flex-1 md:flex-none px-6 py-3 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
         >
           <Plus size={14}/> Tabel Baru
         </button>
         
-        <div className="relative flex-1 md:flex-none">
+        <div className="relative flex-1 md:max-w-xs">
           <select 
             value={activeTableId} 
             onChange={e => setActiveTableId(e.target.value)}
-            className="w-full px-6 py-2.5 text-xs rounded-xl border border-gray-200 dark:border-blue-900/30 bg-white dark:bg-[#1a252f] outline-none appearance-none font-bold pr-10 shadow-sm"
+            className="w-full px-6 py-3 text-xs rounded-xl border border-gray-200 dark:border-blue-900/30 bg-white dark:bg-[#1a252f] outline-none appearance-none font-bold pr-10 shadow-sm"
           >
             <option value="">— Pilih Tabel —</option>
             {tables.map(t => (
@@ -330,7 +370,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
         {activeTableId && isAdmin && (
           <button 
             onClick={() => setConfirmDelete({ type: 'table' })}
-            className="px-6 py-2.5 bg-white dark:bg-red-900/20 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors border border-red-50 dark:border-red-900/10"
+            className="px-6 py-3 bg-white dark:bg-red-900/20 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors border border-red-50 dark:border-red-900/10"
           >
             Hapus Tabel
           </button>
@@ -397,6 +437,15 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
             </div>
             <div className="flex gap-2 self-start">
               {isAdmin && (
+                <button 
+                  onClick={() => toggleLock(activeTable.id, !!activeTable.isLocked)}
+                  className={`p-1.5 rounded-lg transition-all ${activeTable.isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'text-gray-400 hover:text-blue-500 hover:bg-gray-100'}`}
+                  title={activeTable.isLocked ? "Buka Kunci" : "Kunci Tabel"}
+                >
+                  {activeTable.isLocked ? <Lock size={18}/> : <Unlock size={18}/>}
+                </button>
+              )}
+              {(isAdmin || !activeTable.isLocked) && (
                 <div className="flex gap-2">
                   {isAddingColumn ? (
                     <div className="flex gap-1 animate-in slide-in-from-right-2">
@@ -420,14 +469,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto relative">
+            <table className="w-full text-left border-collapse table-fixed md:table-auto">
               <thead>
                 <tr className="bg-blue-50/50 dark:bg-blue-950/20">
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 w-16">#</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 min-w-[200px]">Nama Anggota Kelas</th>
+                  <th className="sticky left-0 z-20 bg-blue-50 dark:bg-blue-950 px-4 md:px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 w-12 md:w-16">#</th>
+                  <th className="sticky left-12 md:left-16 z-20 bg-blue-50 dark:bg-blue-950 px-4 md:px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 min-w-[150px] md:min-w-[200px]">Nama Anggota</th>
                   {cols.map(col => (
-                    <th key={col.id} className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-center">{col.label}</th>
+                    <th key={col.id} className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-center min-w-[80px]">{col.label}</th>
                   ))}
                   {isAdmin && <th className="px-6 py-4 w-16"></th>}
                 </tr>
@@ -435,8 +484,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
                 {rows.map((row, i) => (
                   <tr key={row.id} className="hover:bg-blue-50/20 dark:hover:bg-blue-900/10 transition-colors">
-                    <td className="px-6 py-4 text-xs text-gray-400 font-medium">{i + 1}</td>
-                    <td className="px-6 py-4 text-xs font-bold">{row.name}</td>
+                    <td className="sticky left-0 z-10 bg-white dark:bg-[#1a252f] px-4 md:px-6 py-4 text-xs text-gray-400 font-medium">{i + 1}</td>
+                    <td className="sticky left-12 md:left-16 z-10 bg-white dark:bg-[#1a252f] px-4 md:px-6 py-4 text-xs font-bold truncate group-hover:whitespace-normal transition-all">{row.name}</td>
                     {cols.map(col => (
                     <td key={col.id} className="px-6 py-4 text-center">
                       <button 
@@ -445,11 +494,13 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                           row.checks && row.checks[col.id] 
                             ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' 
                             : 'bg-gray-100 dark:bg-gray-800 text-transparent hover:text-gray-300 border border-transparent hover:border-gray-200'
-                        } ${!isAdmin ? 'cursor-default group' : 'cursor-pointer'}`}
+                        } ${(activeTable?.isLocked && !isAdmin) ? 'cursor-not-allowed group opacity-50' : 'cursor-pointer group'}`}
                       >
                         <Check size={16} strokeWidth={3} />
-                        {!isAdmin && !(row.checks && row.checks[col.id]) && (
-                          <div className="absolute opacity-0 group-hover:opacity-100 bg-black/80 text-white text-[8px] px-2 py-1 rounded-md pointer-events-none transition-opacity">Hanya Admin</div>
+                        {(activeTable?.isLocked && !isAdmin) ? (
+                          <div className="absolute opacity-0 group-hover:opacity-100 bg-black/80 text-white text-[8px] px-2 py-1 rounded-md pointer-events-none transition-opacity">Tabel Dikunci Admin</div>
+                        ) : !isAdmin && !(row.checks && row.checks[col.id]) && (
+                          <div className="absolute opacity-0 group-hover:opacity-100 bg-black/80 text-white text-[8px] px-2 py-1 rounded-md pointer-events-none transition-opacity">Khusus Anggota</div>
                         )}
                       </button>
                     </td>
@@ -470,34 +521,34 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
             </table>
           </div>
 
-          {isAdmin && (
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex flex-col md:flex-row gap-3 border-t border-gray-100 dark:border-gray-800">
-              <div className="flex-1 flex gap-2">
-                <input 
-                  type="text" 
-                  placeholder="Tambahkan nama anggota baru..." 
-                  value={newRowName}
-                  onChange={e => setNewRowName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addRow()}
-                  className="flex-1 px-4 py-2.5 text-xs rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                />
-                <button 
-                  onClick={addRow}
-                  className="px-6 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors"
-                >
-                  Tambah
-                </button>
-              </div>
-              <button 
-                onClick={addClassRows}
-                className="px-6 py-2.5 bg-white dark:bg-gray-800 text-blue-500 border border-blue-100 dark:border-blue-900/30 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-blue-50 transition-colors whitespace-nowrap"
-              >
-                Isi Nama Kelas (Otomatis)
-              </button>
-            </div>
-          )}
+      {(isAdmin || (activeTable && !activeTable.isLocked)) && (
+        <div className="p-4 bg-gray-50 dark:bg-gray-950/50 flex flex-col md:flex-row gap-3 border-t border-gray-100 dark:border-gray-800 animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex-1 flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Tambahkan nama anggota baru..." 
+              value={newRowName}
+              onChange={e => setNewRowName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addRow()}
+              className="flex-1 px-4 py-2.5 text-xs rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+            />
+            <button 
+              onClick={addRow}
+              className="px-6 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/10"
+            >
+              Tambah
+            </button>
+          </div>
+          <button 
+            onClick={addClassRows}
+            className="px-6 py-2.5 bg-white dark:bg-gray-800 text-blue-500 border border-blue-100 dark:border-blue-900/40 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all whitespace-nowrap flex items-center justify-center gap-2"
+          >
+            <Plus size={14} /> Isi Nama Sekelas
+          </button>
         </div>
-      ) : tables.length > 0 ? (
+      )}
+    </div>
+  ) : tables.length > 0 ? (
         <div className="animate-in fade-in duration-700">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-serif text-2xl font-bold flex items-center gap-3">
@@ -519,9 +570,12 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                  <div className="absolute inset-0 bg-blue-500 rounded-[32px] blur-2xl opacity-0 group-hover:opacity-10 transition-opacity" />
                  <div className="relative h-full bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 p-8 shadow-sm hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-2 transition-all duration-300">
                     <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mb-6 group-hover:scale-110 transition-transform shadow-inner">
-                      <Table size={28} />
+                      {t.isLocked ? <Lock size={28} className="text-amber-500" /> : <Table size={28} />}
                     </div>
-                    <h4 className="font-serif text-xl font-bold mb-2 group-hover:text-blue-500 transition-colors">{t.name}</h4>
+                    <h4 className="font-serif text-xl font-bold mb-2 group-hover:text-blue-500 transition-colors flex items-center gap-2">
+                      {t.name}
+                      {t.isLocked && <Lock size={14} className="text-amber-500" />}
+                    </h4>
                     <div className="flex items-center gap-2 mb-6">
                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-300 group-hover:text-blue-400/50 transition-colors">Digital Archive</span>
                        <div className="w-1 h-1 rounded-full bg-gray-200" />
@@ -579,39 +633,53 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       )}
 
       {/* Custom Confirmation Modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Trash2 className="text-red-500" size={32} />
-            </div>
-            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
-              {confirmDelete.type === 'table' 
-                ? 'Seluruh tabel dan data di dalamnya akan dihapus permanen' 
-                : 'Baris anggota ini akan dihapus permanen'}
-            </p>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={() => setConfirmDelete(null)}
-                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-              >
-                faqeee
-              </button>
-              <button 
-                onClick={() => {
-                  if (confirmDelete.type === 'table') deleteTable();
-                  else if (confirmDelete.id) deleteRow(confirmDelete.id);
-                }}
-                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
-              >
-                reyal
-              </button>
-            </div>
+      <AnimatePresence>
+        {confirmDelete && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDelete(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="text-red-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
+                {confirmDelete.type === 'table' 
+                  ? 'Seluruh tabel dan data di dalamnya akan dihapus permanen' 
+                  : 'Baris anggota ini akan dihapus permanen'}
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setConfirmDelete(null)}
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                >
+                  faqeee
+                </button>
+                <button 
+                  onClick={() => {
+                    if (confirmDelete.type === 'table') deleteTable();
+                    else if (confirmDelete.id) deleteRow(confirmDelete.id);
+                  }}
+                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                >
+                  reyal
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

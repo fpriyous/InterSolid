@@ -31,13 +31,13 @@ service cloud.firestore {
 
     // 2. SPECIFIC COLLECTION RULES
     
-    // Announcements (Only Dewa/Admin)
+    // Announcements
     match /announcements/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.authorId == request.auth.uid);
     }
 
-    // Events, Notes, Polls (Dewa, Admin, Member)
     match /events/{id} {
       allow read: if true;
       allow write: if isMember();
@@ -45,17 +45,30 @@ service cloud.firestore {
 
     match /notes/{id} {
       allow read: if true;
-      allow write: if isMember();
+      allow create: if isMember();
+      allow update: if isAdmin() || (
+        isMember() && 
+        resource.data.authorId == request.auth.uid && 
+        resource.data.get('isLocked', false) == false &&
+        request.resource.data.get('isLocked', false) == false &&
+        request.resource.data.authorId == resource.data.authorId
+      );
+      allow delete: if isAdmin() || (
+        isMember() && 
+        resource.data.authorId == request.auth.uid && 
+        resource.data.get('isLocked', false) == false
+      );
     }
 
     match /polls/{id} {
       allow read: if true;
-      allow create, delete: if isMember();
+      allow create: if isMember();
+      allow delete: if isAdmin();
       allow update: if isMember();
       
       match /options/{optId} {
         allow read: if true;
-        allow create, delete: if isMember();
+        allow create, delete: if isAdmin();
         allow update: if isMember();
       }
     }
@@ -68,32 +81,45 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Attendance Tables (Table structure isAdmin, Row data isMember)
+    // Attendance Tables
     match /absenTables/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create: if isMember();
+      allow update: if isAdmin() || (
+        isMember() && 
+        resource.data.isLocked == false && 
+        request.resource.data.isLocked == false
+      );
+      allow delete: if isAdmin();
 
       match /cols/{colId} {
         allow read: if true;
-        allow write: if isAdmin();
+        allow write: if isAdmin() || (
+          isMember() && 
+          get(/databases/$(database)/documents/absenTables/$(id)).data.isLocked == false
+        );
       }
 
       match /rows/{rowId} {
         allow read: if true;
-        allow write: if isMember();
+        allow write: if isAdmin() || (
+          isMember() && 
+          get(/databases/$(database)/documents/absenTables/$(id)).data.isLocked == false
+        );
       }
     }
 
     // Notifications
     match /notifications/{id} {
-      allow read, delete: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow delete: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if true;
       allow update: if isAdmin();
     }
 
     match /admins/{id} {
-      allow read: if isSignedIn();
-      allow write: if isDewa() || (isSignedIn() && request.auth.uid == id);
+      allow read, write: if isSignedIn() && request.auth.uid == id;
+      allow read: if isAdmin();
     }
 
     // Memories (Class Moments)
@@ -105,6 +131,25 @@ service cloud.firestore {
         isAdmin() || (resource.data.userId == request.auth.uid)
       );
       allow delete: if isAdmin() || (resource.data.userId == request.auth.uid);
+    }
+
+    // Portal Logs & Activity Tracking
+    match /portal_logs/{id} {
+      allow read: if isMember();
+      allow create: if isMember();
+      allow update, delete: if isAdmin();
+    }
+
+    match /spin_logs/{id} {
+      allow read: if true;
+      allow create: if isMember();
+      allow update, delete: if isAdmin();
+    }
+
+    match /table_activity/{id} {
+      allow read: if true;
+      allow create: if isMember();
+      allow update, delete: if isAdmin();
     }
   }
 }

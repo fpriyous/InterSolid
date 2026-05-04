@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { 
   Calendar, 
   ImageIcon, 
@@ -26,95 +26,42 @@ import {
   onSnapshot,
   getCountFromServer,
   where,
+  getDocs
 } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { 
-  ComposedChart, 
-  Bar, 
-  Cell,
-  Line,
+  AreaChart, 
+  Area, 
   ResponsiveContainer, 
   Tooltip, 
   XAxis, 
-  YAxis 
+  YAxis,
+  CartesianGrid
 } from 'recharts';
 
 interface DashboardProps {
   user: User | null;
-  setActivePage: (id: string) => void;
+  setActivePage: (id: string, targetId?: string | null) => void;
 }
 
-const Candlestick = (props: any) => {
-  const { x, y, width, height, payload, yAxis } = props;
-  if (!payload || !yAxis || typeof yAxis.scale !== 'function') return null;
-  
-  const { open, close, high, low, trend } = payload;
-  const isUp = trend === 'up';
-  const finalColor = isUp ? '#10b981' : '#f43f5e';
-  
-  const bodyWidth = Math.max(width * 0.8, 2);
-  const wickX = x + width / 2;
-
-  // Transform data values to Y coordinates
-  try {
-    const yOpen = yAxis.scale(open);
-    const yClose = yAxis.scale(close);
-    const yHigh = yAxis.scale(high);
-    const yLow = yAxis.scale(low);
-
-    return (
-      <g>
-        {/* Wick */}
-        <line
-          x1={wickX}
-          y1={yHigh}
-          x2={wickX}
-          y2={yLow}
-          stroke={finalColor}
-          strokeWidth={1.5}
-        />
-        {/* Body */}
-        <rect
-          x={x + (width - bodyWidth) / 2}
-          y={Math.min(yOpen, yClose)}
-          width={bodyWidth}
-          height={Math.max(Math.abs(yOpen - yClose), 2)}
-          fill={finalColor}
-          rx={1}
-        />
-      </g>
-    );
-  } catch (e) {
-    return (
-      <rect
-        x={x + (width - bodyWidth) / 2}
-        y={y}
-        width={bodyWidth}
-        height={height}
-        fill={finalColor}
-      />
-    );
-  }
-};
-
 export default function Dashboard({ user, setActivePage }: DashboardProps) {
+  const isMobile = useMemo(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent), []);
   const [nextEvents, setNextEvents] = useState<any[]>([]);
   const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
   const [recentMemories, setRecentMemories] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalMemories: 0,
     totalEvents: 0,
-    totalUsers: 0
+    activityIndex: 0
   });
   const [loading, setLoading] = useState(true);
   const [chartWeek, setChartWeek] = useState(new Date());
   const [realChartData, setRealChartData] = useState<any[]>([]);
 
-  // Fetch real data for chart - HOURLY for a week
+  // Fetch real data for chart - Total System Activity from multiple collections
   useEffect(() => {
     const startOfWeek = new Date(chartWeek);
     startOfWeek.setHours(0, 0, 0, 0);
-    // Find the Monday of the current week
     const day = startOfWeek.getDay();
     const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
     startOfWeek.setDate(diff);
@@ -123,77 +70,96 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
     endOfWeek.setDate(startOfWeek.getDate() + 7);
     
     const now = new Date();
-    
     if (startOfWeek > now) {
       setRealChartData([]);
       return;
     }
 
-    const q = query(
-      collection(db, 'memories'),
-      where('createdAt', '>=', startOfWeek),
-      where('createdAt', '<=', endOfWeek)
-    );
+    // Prepare aggregation data structure
+    const activityCounts: Record<string, number> = {};
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      // Group by [dayIndex][hourIndex]
-      const counts: Record<string, number> = {};
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const date = data.createdAt?.toDate();
-        if (date) {
-          const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`;
-          counts[key] = (counts[key] || 0) + 1;
-        }
+    const collectionsToTrack = [
+      'memories', 'notes', 'aspirasi', 'announcements', 
+      'events', 'spin_logs', 'table_activity', 'absenTables', 'portal_logs'
+    ];
+    const unsubscribes = collectionsToTrack.map(collName => {
+      const q = query(
+        collection(db, collName),
+        where('createdAt', '>=', startOfWeek),
+        where('createdAt', '<=', endOfWeek)
+      );
+
+      return onSnapshot(q, () => {
+        // Any change in any collection triggers a fresh aggregation
+        updateAggregatedChart();
+      }, (error) => {
+        console.warn(`Chart listening error for ${collName}:`, error);
       });
-
-      const data = [];
-      let lastVal = 0;
-      let hasData = false;
-
-      // Loop through 7 days, 24 hours each = 168 points
-      for (let d = 0; d < 7; d++) {
-        const currentD = new Date(startOfWeek);
-        currentD.setDate(startOfWeek.getDate() + d);
-        
-        for (let h = 0; h < 24; h++) {
-          const key = `${currentD.getFullYear()}-${currentD.getMonth()}-${currentD.getDate()}-${h}`;
-          const currentHourDate = new Date(currentD);
-          currentHourDate.setHours(h);
-
-          const count = counts[key] || 0;
-          if (count > 0) hasData = true;
-
-          if (currentHourDate > now) break;
-
-          const open = lastVal;
-          const close = count;
-          
-          // Mimic stock high/low with slight variance if there's activity
-          const high = Math.max(open, close) + (count > 0 ? Math.random() * 1.5 : 0);
-          const low = Math.max(0, Math.min(open, close) - (count > 0 ? Math.random() * 0.5 : 0));
-
-          data.push({
-            hourLabel: `${currentHourDate.toLocaleDateString('id-ID', { weekday: 'short' })} ${h}:00`,
-            fullDate: `${currentHourDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} ${h}:00`,
-            open,
-            close,
-            high,
-            low,
-            val: count,
-            trend: close >= open ? 'up' : 'down'
-          });
-          lastVal = close;
-        }
-      }
-      setRealChartData(hasData ? data : []);
-    }, (error) => {
-      console.error("Dashboard Chart Error:", error);
-      // Fallback or empty state
-      setRealChartData([]);
     });
 
-    return () => unsubscribe();
+    const updateAggregatedChart = async () => {
+      try {
+        const counts: Record<string, number> = {};
+        
+        // Fetch current week for all relevant collections simultaneously
+        const snapshots = await Promise.all(collectionsToTrack.map(coll => 
+          getDocs(query(collection(db, coll), 
+            where('createdAt', '>=', startOfWeek), 
+            where('createdAt', '<=', endOfWeek)
+          ))
+        ));
+
+        snapshots.forEach((snapshot, index) => {
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            let date: Date | null = null;
+            
+            // Check createdAt first, fallback to date for events
+            if (data.createdAt) {
+              date = typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate() : 
+                     data.createdAt.seconds ? new Date(data.createdAt.seconds * 1000) : new Date(data.createdAt);
+            } else if (data.date && collectionsToTrack[index] === 'events') {
+              date = new Date(data.date);
+            }
+
+            if (date && !isNaN(date.getTime())) {
+              const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`;
+              counts[key] = (counts[key] || 0) + 1;
+            }
+          });
+        });
+
+        const data = [];
+        let lastVal = 0;
+        let hasData = false;
+
+        for (let d = 0; d < 7; d++) {
+          const currentD = new Date(startOfWeek);
+          currentD.setDate(startOfWeek.getDate() + d);
+          for (let h = 0; h < 24; h++) {
+            const key = `${currentD.getFullYear()}-${currentD.getMonth()}-${currentD.getDate()}-${h}`;
+            const currentHourDate = new Date(currentD);
+            currentHourDate.setHours(h);
+            const count = counts[key] || 0;
+            if (count > 0) hasData = true;
+            if (currentHourDate > now) break;
+            data.push({
+              hourLabel: `${currentHourDate.toLocaleDateString('id-ID', { weekday: 'short' })} ${h}:00`,
+              fullDate: `${currentHourDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} ${h}:00`,
+              val: count
+            });
+          }
+        }
+        setRealChartData(hasData ? data : []);
+        setSystemStatus('optimal');
+      } catch (err) {
+        setSystemStatus('warning');
+      }
+    };
+
+    updateAggregatedChart();
+
+    return () => unsubscribes.forEach(unsub => unsub());
   }, [chartWeek]);
 
   const changeWeek = (offset: number) => {
@@ -235,17 +201,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
   };
 
   useEffect(() => {
-    // Randomize latency slightly for feel
+    // Latency only - doesn't affect status unless absolutely needed
     const interval = setInterval(() => {
        setLatency(prev => {
-         const change = Math.floor(Math.random() * 40) - 15; // More variance to see status changes
-         const next = Math.max(1, prev + change);
-         if (next > 200) setSystemStatus('critical');
-         else if (next > 100) setSystemStatus('warning');
-         else setSystemStatus('optimal');
-         return next;
+         const change = Math.floor(Math.random() * 4) - 1; 
+         return Math.max(1, prev + change);
        });
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -291,16 +253,18 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
       try {
         const memoriesColl = collection(db, 'memories');
         const eventsColl = collection(db, 'events');
+        const logsColl = collection(db, 'portal_logs');
         
-        const [memCount, eventCount] = await Promise.all([
+        const [memCount, eventCount, logCount] = await Promise.all([
           getCountFromServer(memoriesColl),
-          getCountFromServer(query(eventsColl, where('date', '>=', today)))
+          getCountFromServer(query(eventsColl, where('date', '>=', today))),
+          getCountFromServer(logsColl)
         ]);
 
         setStats({
           totalMemories: memCount.data().count,
           totalEvents: eventCount.data().count,
-          totalUsers: 32 
+          activityIndex: logCount.data().count 
         });
       } catch (err) {
         console.error(err);
@@ -328,7 +292,10 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
     visible: { y: 0, opacity: 1 }
   };
 
-  if (loading) return null;
+  const [randomTitle] = useState(() => {
+    const titles = ['Diplomatés', 'Globalis', 'Internasionalis'];
+    return titles[Math.floor(Math.random() * titles.length)];
+  });
 
   return (
     <motion.div 
@@ -338,8 +305,8 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
       className="space-y-10 pb-24"
     >
       {/* 01. SYSTEM STATUS BAR */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-2">
-        <div className="space-y-1.5">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-1 md:px-2">
+        <div className="space-y-1 md:space-y-1.5">
           <div className="flex items-center gap-2.5">
             <div className="relative">
                <div className={`w-2 h-2 ${getStatusColor('bg')} rounded-full animate-ping absolute inset-0`} />
@@ -349,25 +316,25 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
               System {systemStatus === 'optimal' ? 'Live' : systemStatus === 'warning' ? 'Lagging' : 'Critical'}
             </span>
           </div>
-          <h1 className="text-4xl font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
-            Selamat Datang, <span className="text-blue-600">{user?.displayName?.split(' ')[0] || 'Personel'}</span>.
+          <h1 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
+            Selamat Datang, <span className="text-blue-600">{randomTitle}</span>.
           </h1>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+          <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
              <Clock size={10} /> {new Date().toLocaleTimeString('id-id', { hour: '2-digit', minute: '2-digit' })} WIB • LOCAL HOST VERIFIED
           </p>
         </div>
 
-        <div className="flex items-center gap-8 md:gap-12">
+        <div className="flex items-center justify-between md:justify-end gap-6 md:gap-12 bg-white dark:bg-white/5 p-4 rounded-3xl md:bg-transparent md:p-0 border border-slate-100 dark:border-white/5 md:border-none">
            {[
-             { label: 'Dokumentasi', val: stats.totalMemories, suffix: 'MB', color: 'text-slate-800 dark:text-white' },
-             { label: 'Agenda Aktif', val: stats.totalEvents, suffix: 'UNIT', color: 'text-slate-800 dark:text-white' },
+             { label: 'Files', val: stats.totalMemories, suffix: 'MB', color: 'text-slate-800 dark:text-white' },
+             { label: 'Agenda', val: stats.totalEvents, suffix: 'UNIT', color: 'text-slate-800 dark:text-white' },
              { label: 'Latensi', val: `${latency}ms`, suffix: 'PING', color: getLatencyColor(latency) }
            ].map((stat, i) => (
-             <div key={i} className="flex flex-col items-end">
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{stat.label}</span>
-                <div className="flex items-baseline gap-1">
-                  <span className={`text-2xl font-black tracking-tighter leading-none ${stat.color}`}>{stat.val}</span>
-                  <span className="text-[8px] font-bold text-slate-400 uppercase">{stat.suffix}</span>
+             <div key={i} className="flex flex-col items-center md:items-end">
+                <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{stat.label}</span>
+                <div className="flex items-baseline gap-0.5 md:gap-1">
+                  <span className={`text-lg md:text-2xl font-black tracking-tighter leading-none ${stat.color}`}>{stat.val}</span>
+                  <span className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase">{stat.suffix}</span>
                 </div>
              </div>
            ))}
@@ -482,8 +449,8 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                    ))}
                  </div>
                  <div className="text-right">
-                    <p className="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-[0.2em]">{stats.totalUsers+20} Personel</p>
-                    <p className="text-[8px] font-black text-emerald-500 uppercase tracking-[0.4em] mt-1">Status: Terverifikasi</p>
+                    <p className="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-[0.2em]">{stats.activityIndex} Aktivitas Tercatat</p>
+                    <p className="text-[8px] font-black text-emerald-500 uppercase tracking-[0.4em] mt-1 italic">Indeks Sistem: Real-time</p>
                  </div>
               </div>
             </div>
@@ -501,7 +468,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         >
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
             <div className="space-y-1">
-               <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-600">Aliran Data Memori</h2>
+               <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-600">Aliran Aktivitas Portal</h2>
                <p className="text-[12px] font-bold text-slate-500 dark:text-slate-400 uppercase">
                  Log Pekan: {(() => {
                    const start = new Date(chartWeek);
@@ -540,7 +507,14 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
           <div className="h-[240px] w-full">
             {realChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={realChartData} margin={{ top: 30, right: 10, left: 10, bottom: 0 }}>
+                <AreaChart data={realChartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-white/5" />
                   <XAxis 
                     dataKey="hourLabel" 
                     axisLine={false} 
@@ -548,39 +522,44 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                     tick={{ fontSize: 8, fill: '#64748b', fontWeight: 900 }}
                     interval={23}
                   />
-                  <YAxis hide domain={[0, 'dataMax + 2']} />
+                  <YAxis hide domain={[0, 'dataMax + 1']} />
                   <Tooltip 
                     contentStyle={{ 
-                      backgroundColor: 'var(--tooltip-bg, #ffffff)', 
-                      border: 'none', 
+                      backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                      border: '1px solid rgba(255,255,255,0.1)', 
                       borderRadius: '16px',
-                      color: 'var(--tooltip-text, #1e293b)',
+                      color: '#fff',
                       fontSize: '11px',
                       fontWeight: '800',
                       textTransform: 'uppercase',
-                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                      backdropFilter: 'blur(10px)'
                     }} 
-                    cursor={{ stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' }}
+                    cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
                     formatter={(value: any) => [
-                      <span className="text-xl font-black text-blue-600 tracking-tighter">{value} ENTRI</span>,
+                      <span className="text-xl font-black text-blue-400 tracking-tighter">{value} ENTRI</span>,
                       ''
                     ]}
                     labelFormatter={(label) => (
-                      <div className="text-[9px] font-black text-slate-400 mb-2 tracking-widest">{label}</div>
+                      <span className="block text-[9px] font-black text-slate-400 mb-2 tracking-widest">{label}</span>
                     )}
                   />
-                  <Bar 
+                  <Area 
+                    type="monotone" 
                     dataKey="val" 
-                    shape={<Candlestick />}
+                    stroke="#3b82f6" 
+                    strokeWidth={4}
+                    fillOpacity={1} 
+                    fill="url(#colorVal)" 
+                    animationDuration={1500}
                   />
-                </ComposedChart>
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center space-y-4 border border-dashed border-slate-200 dark:border-white/5 rounded-3xl">
                  <div className="w-12 h-12 bg-slate-50 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-300">
                    <Clock size={24} />
                  </div>
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Data belum divalidasi untuk periode ini</p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Tidak ada aktivitas rekaman pada periode ini</p>
               </div>
             )}
           </div>
@@ -588,13 +567,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
           <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
              <div className="flex items-center gap-10">
                 <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Volume Tertinggi</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Puncak Aktivitas</p>
                    <p className="text-xl font-black tracking-tighter text-slate-800 dark:text-white">
                      {realChartData.length > 0 ? Math.max(...realChartData.map(d => d.val)) : 0} Entri
                    </p>
                 </div>
                 <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Status Database</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Status Sistem</p>
                    <p className={`text-xl font-black tracking-tighter ${systemStatus === 'optimal' ? 'text-emerald-500' : 'text-amber-500'}`}>
                      {systemStatus.toUpperCase()}
                    </p>
@@ -650,7 +629,11 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
              
              <div className="space-y-2.5 font-mono">
                 {recentMemories.length > 0 ? recentMemories.slice(0, 4).map((m, i) => (
-                  <div key={i} className="text-[9px] text-slate-600 dark:text-slate-400 flex items-start gap-2 group/log">
+                  <div 
+                    key={i} 
+                    onClick={() => setActivePage('memory', m.id)}
+                    className="text-[9px] text-slate-600 dark:text-slate-400 flex items-start gap-2 group/log cursor-pointer hover:text-emerald-500 transition-colors"
+                  >
                      <span className="text-emerald-500/40 opacity-0 group-hover/log:opacity-100 transition-opacity">$&gt;</span>
                      <p className="line-clamp-1">
                         <span className="text-slate-400 dark:text-slate-500 font-bold">[{new Date().toLocaleTimeString('id-id', { hour12: false, hour: '2-digit', minute: '2-digit' })}]</span>{' '}
@@ -672,7 +655,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         {/* Highlight Memory - Full Width Wide */}
         <motion.div 
           variants={itemVariants}
-          onClick={() => setActivePage('memory')}
+          onClick={() => setActivePage('memory', recentMemories[0]?.id)}
           className="md:col-span-12 relative overflow-hidden bg-white dark:bg-slate-900 rounded-[56px] border border-blue-50 dark:border-white/5 shadow-xl group cursor-pointer h-[440px]"
         >
           <div className="absolute inset-0 grayscale-[0.5] group-hover:grayscale-0 transition-all duration-1000">
@@ -700,7 +683,10 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                 </p>
              </div>
              
-             <button className="px-10 py-5 bg-white text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-[0.4em] hover:bg-slate-100 transition-all flex items-center gap-3 shadow-2xl">
+             <button 
+               onClick={(e) => { e.stopPropagation(); setActivePage('memory', recentMemories[0]?.id); }}
+               className="px-10 py-5 bg-white text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-[0.4em] hover:bg-slate-100 transition-all flex items-center gap-3 shadow-2xl"
+             >
                 BUKA DATABASE <ArrowRight size={14} />
              </button>
           </div>

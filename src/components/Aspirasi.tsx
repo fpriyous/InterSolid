@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, Send, Smile, Image as ImageIcon, Trash2, Heart, ShieldAlert, Key, Lock, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
+import { db, logPortalActivity } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, Timestamp, orderBy, query, increment, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
@@ -63,6 +63,7 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
         date: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         createdAt: Timestamp.now()
       });
+      logPortalActivity('aspirasi_create', inputText ? `Pesan: ${inputText.slice(0, 20)}...` : 'Sticker', user);
       setInputText('');
       setSelectedSticker('');
       setShowStickers(false);
@@ -123,7 +124,6 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
     try {
       await deleteDoc(doc(db, 'aspirasi', m.id));
       setConfirmMsg(null);
-      alert('Pesan dihapus.');
     } catch (e: any) {
       console.error("Delete aspirasi error:", e);
       alert('Gagal menghapus aspirasi: ' + e.message);
@@ -141,7 +141,6 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
         createdAt: Timestamp.now(),
         type: 'warning'
       });
-      alert('Peringatan dikirim!');
       setWarningMsg(null);
     } catch (e: any) {
       console.error(e);
@@ -157,14 +156,19 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-xl shadow-blue-500/5">
-        <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
+      <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-4 md:p-6 shadow-xl shadow-blue-500/5">
+        <div className="flex flex-col md:flex-row items-start gap-4">
+          <div className="hidden md:flex w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 items-center justify-center text-blue-500">
             <MessageSquare size={20}/>
           </div>
-          <div className="flex-1 space-y-4">
+          <div className="flex-1 w-full space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Pesan Anonim</span>
+              <div className="flex items-center gap-2">
+                <div className="md:hidden w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500">
+                  <MessageSquare size={16}/>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Pesan Anonim</span>
+              </div>
                 <button 
                   onClick={() => {
                     if (isAdmin) {
@@ -179,7 +183,7 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
                       : 'text-gray-300 hover:text-orange-500'
                   }`}
                 >
-                  <ShieldAlert size={12}/> {(isModerator || isAdmin) ? (isDewa ? 'MODE DEWA AKTIF' : isAdmin ? 'MODE ADMIN AKTIF' : 'MODE MODERATOR') : 'LOGIN MODERATOR'}
+                  <ShieldAlert size={12}/> {(isModerator || isAdmin) ? (isDewa ? 'DEWA' : isAdmin ? 'ADMIN' : 'MOD') : 'MODERATOR'}
                 </button>
             </div>
             {user ? (
@@ -247,44 +251,44 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
         {messages.map((m) => (
           <div 
             key={m.id} 
-            className={`bg-white dark:bg-[#1a252f] p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm relative group transition-all ${
+            className={`bg-white dark:bg-[#1a252f] p-4 md:p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm relative group transition-all ${
               activeReactionMenu === m.id ? 'z-[60]' : 'z-10'
             }`}
           >
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-gray-500">ANON</span>
+            <div className="flex items-start justify-between mb-2 gap-2">
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                  <span className="text-[8px] md:text-[10px] font-bold text-gray-500">ANON</span>
                 </div>
-                <span className="text-[9px] font-bold tracking-widest text-gray-400 uppercase">{m.date}</span>
+                <span className="text-[8px] md:text-[9px] font-bold tracking-widest text-gray-400 uppercase">{m.date}</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1.5 md:gap-2 items-center">
                 {(isAdmin || isModerator) && (
-                  <>
+                  <div className="flex gap-1 md:gap-2">
                     <button 
                       onClick={() => sendWarning(m)}
-                      className="p-1.5 text-orange-400 hover:bg-orange-50 rounded-lg transition-all"
+                      className="p-1.5 text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-all"
                       title="Kirim Peringatan"
                     >
-                      <ShieldAlert size={14}/>
+                      <ShieldAlert size={12} className="md:w-3.5 md:h-3.5" />
                     </button>
                     <button 
                       onClick={() => setConfirmMsg(m)} 
-                      className="p-1.5 text-gray-200 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      className="p-1.5 text-gray-200 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
                       title="Hapus Pesan"
                     >
-                      <Trash2 size={14}/>
+                      <Trash2 size={12} className="md:w-3.5 md:h-3.5" />
                     </button>
-                  </>
+                  </div>
                 )}
                 
                 <div className="relative">
                   <button 
                     onClick={() => setActiveReactionMenu(activeReactionMenu === m.id ? null : m.id)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-slate-100 transition-colors"
+                    className="flex items-center gap-1 px-2 md:px-3 py-1 rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-slate-100 transition-colors"
                   >
-                    <Plus size={12} />
-                    <span className="text-[10px] font-bold">REAKSI</span>
+                    <Plus size={10} className="md:w-3 md:h-3" />
+                    <span className="text-[8px] md:text-[10px] font-bold">REAKSI</span>
                   </button>
 
                   <AnimatePresence>
@@ -293,7 +297,7 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                        className="absolute bottom-full right-0 mb-2 p-2 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-700 flex gap-2 z-50 whitespace-nowrap"
+                        className="fixed md:absolute md:bottom-full bottom-20 left-4 right-4 md:left-auto md:right-0 p-2 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-wrap justify-center gap-2 z-[70] md:whitespace-nowrap"
                       >
                         {REACTION_EMOJIS.map(emoji => {
                           const isUserReaction = user && m.userReactions?.[user.uid] === emoji;
@@ -301,7 +305,7 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
                             <button
                               key={emoji}
                               onClick={() => reactToMessage(m, emoji)}
-                              className={`text-xl hover:scale-125 transition-transform p-1 rounded-lg ${isUserReaction ? 'bg-blue-100 dark:bg-blue-900/40' : ''}`}
+                              className={`text-xl hover:scale-125 transition-transform p-1.5 rounded-lg ${isUserReaction ? 'bg-blue-100 dark:bg-blue-900/40' : ''}`}
                             >
                               {emoji}
                             </button>
@@ -368,69 +372,97 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
       </div>
 
       {/* Custom Confirmation Modal */}
-      {confirmMsg && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Trash2 className="text-red-500" size={32} />
-            </div>
-            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Pesan aspirasi ini akan dihapus permanen</p>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={() => setConfirmMsg(null)}
-                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-              >
-                faqeee
-              </button>
-              <button 
-                onClick={() => confirmMsg && deleteMessage(confirmMsg)}
-                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
-              >
-                reyal
-              </button>
-            </div>
+      <AnimatePresence>
+        {confirmMsg && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmMsg(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="text-red-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Pesan ini akan dihapus permanen</p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setConfirmMsg(null)}
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                >
+                  faqeee
+                </button>
+                <button 
+                  onClick={() => confirmMsg && deleteMessage(confirmMsg)}
+                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                >
+                  reyal
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* Warning Modal */}
-      {warningMsg && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-orange-100 dark:border-orange-900/30 p-8 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-orange-50 dark:bg-orange-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <ShieldAlert className="text-orange-500" size={32} />
-            </div>
-            <h3 className="font-serif text-2xl font-bold mb-2 uppercase tracking-tight">Kirim Peringatan</h3>
-            <p className="text-[10px] text-gray-400 mb-6 uppercase font-bold tracking-widest leading-relaxed">
-              Kepada: <span className="text-orange-500">{isDewa ? (warningMsg.authorName || 'Anonim') : 'Anonim'}</span>
-            </p>
-            
-            <textarea 
-              value={warningText}
-              onChange={e => setWarningText(e.target.value)}
-              className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-2xl p-4 text-[11px] min-h-[120px] outline-none focus:ring-2 focus:ring-orange-500/20 mb-6 resize-none leading-relaxed"
-              placeholder="Tulis pesan peringatan..."
+      <AnimatePresence>
+        {warningMsg && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setWarningMsg(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
             />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] rounded-3xl border border-orange-100 dark:border-orange-900/30 p-8 max-w-sm w-full text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-orange-50 dark:bg-orange-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <ShieldAlert className="text-orange-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2 uppercase tracking-tight">Kirim Peringatan</h3>
+              <p className="text-[10px] text-gray-400 mb-6 uppercase font-bold tracking-widest leading-relaxed">
+                Kepada: <span className="text-orange-500">{isDewa ? (warningMsg.authorName || 'Anonim') : 'Anonim'}</span>
+              </p>
+              
+              <textarea 
+                value={warningText}
+                onChange={e => setWarningText(e.target.value)}
+                className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-2xl p-4 text-[11px] min-h-[120px] outline-none focus:ring-2 focus:ring-orange-500/20 mb-6 resize-none leading-relaxed"
+                placeholder="Tulis pesan peringatan..."
+              />
 
-            <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={() => setWarningMsg(null)}
-                className="py-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
-              >
-                Batal
-              </button>
-              <button 
-                onClick={executeWarning}
-                className="py-3 bg-orange-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/20"
-              >
-                Kirim Sekarang
-              </button>
-            </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setWarningMsg(null)}
+                  className="py-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-gray-200 dark:hover:bg-gray-700 transition-all"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={executeWarning}
+                  className="py-3 bg-orange-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/20"
+                >
+                  Kirim Sekarang
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

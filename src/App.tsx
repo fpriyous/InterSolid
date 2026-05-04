@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { 
   LayoutGrid, 
   Calendar, 
@@ -18,7 +18,8 @@ import {
   LayoutDashboard,
   LogOut,
   User as UserIcon,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from './lib/firebase';
@@ -39,17 +40,17 @@ import SplashCursor from './components/SplashCursor';
 import FadeContent from './components/FadeContent';
 import FocusText from './components/FocusText';
 
-// Import Feature Components
-import Kalender from './components/Kalender';
-import List from './components/List';
-import SpinWheel from './components/SpinWheel';
-import Voting from './components/Voting';
-import Notulensi from './components/Notulensi';
-import Aspirasi from './components/Aspirasi';
-import Pengumuman from './components/Pengumuman';
-import Memory from './components/Memory';
-import Dashboard from './components/Dashboard';
-import RandomMemoryPopup from './components/RandomMemoryPopup';
+// Lazy Load Feature Components
+const Kalender = lazy(() => import('./components/Kalender'));
+const List = lazy(() => import('./components/List'));
+const SpinWheel = lazy(() => import('./components/SpinWheel'));
+const Voting = lazy(() => import('./components/Voting'));
+const Notulensi = lazy(() => import('./components/Notulensi'));
+const Aspirasi = lazy(() => import('./components/Aspirasi'));
+const Pengumuman = lazy(() => import('./components/Pengumuman'));
+const Memory = lazy(() => import('./components/Memory'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const RandomMemoryPopup = lazy(() => import('./components/RandomMemoryPopup'));
 
 type MenuId = string;
 
@@ -76,6 +77,12 @@ const ADMIN_PIN = '313';
 
 export default function App() {
   const [activePage, setActivePage] = useState<MenuId>('home');
+  const [targetId, setTargetId] = useState<string | null>(null);
+
+  const navigateToPage = (page: string, id: string | null = null) => {
+    setActivePage(page);
+    setTargetId(id);
+  };
   const [user, setUser] = useState<User | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -222,17 +229,33 @@ export default function App() {
   };
 
   const renderContent = () => {
-    switch (activePage) {
-      case 'kalender': return <Kalender user={user} isAdmin={effectiveAdmin} />;
-      case 'absen': return <List isAdmin={effectiveAdmin} user={user} />;
-      case 'spin': return <SpinWheel user={user} />;
-      case 'voting': return <Voting isAdmin={effectiveAdmin} user={user} />;
-      case 'notulensi': return <Notulensi isAdmin={effectiveAdmin} user={user} />;
-      case 'aspirasi': return <Aspirasi isAdmin={effectiveAdmin} isDewa={isDewa} user={user} />;
-      case 'memory': return <Memory isAdmin={effectiveAdmin} user={user} />;
-      case 'pengumuman': return <Pengumuman isAdmin={effectiveAdmin} user={user} />;
-      default: return <Dashboard user={user} setActivePage={setActivePage} />;
-    }
+    return (
+      <Suspense fallback={
+        <div className="flex flex-col items-center justify-center py-20 min-h-[400px] animate-in fade-in duration-500">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-blue-500 animate-pulse" />
+            </div>
+          </div>
+          <p className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-blue-500/50 animate-pulse">Menyiapkan Fitur...</p>
+        </div>
+      }>
+        {(() => {
+          switch (activePage) {
+            case 'kalender': return <Kalender user={user} isAdmin={effectiveAdmin} setActivePage={navigateToPage} />;
+            case 'absen': return <List isAdmin={effectiveAdmin} user={user} />;
+            case 'spin': return <SpinWheel user={user} />;
+            case 'voting': return <Voting isAdmin={effectiveAdmin} user={user} />;
+            case 'notulensi': return <Notulensi isAdmin={effectiveAdmin} user={user} />;
+            case 'aspirasi': return <Aspirasi isAdmin={effectiveAdmin} isDewa={isDewa} user={user} />;
+            case 'memory': return <Memory isAdmin={effectiveAdmin} user={user} targetId={targetId} setTargetId={setTargetId} />;
+            case 'pengumuman': return <Pengumuman isAdmin={effectiveAdmin} user={user} />;
+            default: return <Dashboard user={user} setActivePage={navigateToPage} />;
+          }
+        })()}
+      </Suspense>
+    );
   };
 
   const currentItem = MENU_ITEMS.find(m => m.id === activePage);
@@ -242,17 +265,18 @@ export default function App() {
       <SplashCursor />
       
       {/* Header */}
-      <header className="sticky top-0 z-50 h-[62px] bg-white/90 dark:bg-[#141e26]/95 backdrop-blur-md border-b border-blue-100 dark:border-blue-900/30 px-6 flex items-center justify-between">
+      <header className="sticky top-0 z-[60] h-[56px] md:h-[62px] bg-white/90 dark:bg-[#141e26]/95 backdrop-blur-md border-b border-blue-100 dark:border-blue-900/30 px-4 md:px-6 flex items-center justify-between">
         <div 
-          className="flex items-center gap-3 cursor-pointer group"
-          onClick={() => setActivePage('home')}
+          className="flex items-center gap-2 md:gap-3 cursor-pointer group"
+          onClick={() => navigateToPage('home')}
         >
-          <div className="w-9 h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <LayoutDashboard size={18} className="text-white" />
+          <div className="w-8 h-8 md:w-9 md:h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
+            <LayoutDashboard size={16} className="text-white md:hidden" />
+            <LayoutDashboard size={18} className="text-white hidden md:block" />
           </div>
           <div>
-            <h1 className="font-serif text-xl font-bold tracking-tight leading-tight">InterSolid</h1>
-            <span className="text-[10px] uppercase tracking-widest text-[#9aaabb] font-medium">Portal Kelas</span>
+            <h1 className="font-serif text-lg md:text-xl font-bold tracking-tight leading-tight">InterSolid</h1>
+            <span className="text-[8px] md:text-[10px] uppercase tracking-widest text-[#9aaabb] font-medium">Portal Kelas</span>
           </div>
         </div>
 
@@ -261,7 +285,7 @@ export default function App() {
             {MENU_ITEMS.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setActivePage(item.id)}
+                onClick={() => navigateToPage(item.id)}
                 className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
                   activePage === item.id 
                     ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
@@ -345,7 +369,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-[1160px] mx-auto p-6 md:p-8 relative z-10">
+      <main className="max-w-[1160px] mx-auto p-4 md:p-8 relative z-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={activePage}
@@ -355,15 +379,15 @@ export default function App() {
             transition={{ duration: 0.3 }}
           >
             {activePage !== 'home' && (
-              <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div className="mb-6 md:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                   <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Fitur Modern</span>
-                  <h2 className="font-serif text-3xl font-bold">{currentItem?.label}</h2>
-                  <p className="text-sm text-gray-400 mt-1">{currentItem?.description}</p>
+                  <h2 className="font-serif text-2xl md:text-3xl font-bold">{currentItem?.label}</h2>
+                  <p className="text-xs md:text-sm text-gray-400 mt-1">{currentItem?.description}</p>
                 </div>
                 <button 
-                  onClick={() => setActivePage('home')}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white dark:bg-[#1a252f] border border-blue-50 dark:border-blue-900/20 rounded-xl text-xs font-bold text-blue-500 hover:bg-blue-50 transition-all md:w-fit"
+                  onClick={() => navigateToPage('home')}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white dark:bg-[#1a252f] border border-blue-50 dark:border-blue-900/20 rounded-xl text-xs font-bold text-blue-500 hover:bg-blue-50 transition-all w-fit md:w-fit"
                 >
                   <ArrowLeft size={16} /> Beranda
                 </button>
@@ -378,7 +402,7 @@ export default function App() {
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] w-[92%] max-w-[440px] bg-white/80 dark:bg-[#0f172a]/80 backdrop-blur-2xl border border-white/20 dark:border-white/5 px-2 py-2 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] flex items-center justify-between gap-1 overflow-hidden">
         <button
-          onClick={() => setActivePage('home')}
+          onClick={() => navigateToPage('home')}
           className={`relative flex flex-col items-center justify-center p-2 rounded-[2rem] flex-1 transition-all duration-300 ${
             activePage === 'home' ? 'text-blue-500' : 'text-gray-400 active:scale-95'
           }`}
@@ -395,7 +419,7 @@ export default function App() {
         {MENU_ITEMS.slice(1, 5).map((item) => (
           <button
             key={item.id}
-            onClick={() => setActivePage(item.id)}
+            onClick={() => navigateToPage(item.id)}
             className={`relative flex flex-col items-center justify-center p-2 rounded-[2rem] flex-1 transition-all duration-300 ${
               activePage === item.id ? 'text-blue-500' : 'text-gray-400 active:scale-95'
             }`}
@@ -481,7 +505,7 @@ export default function App() {
                   <button
                     key={item.id}
                     onClick={() => {
-                      setActivePage(item.id);
+                      navigateToPage(item.id);
                       setIsMenuOpen(false);
                     }}
                     className="flex flex-col items-center gap-3 transition-all active:scale-90"
@@ -626,7 +650,9 @@ export default function App() {
       </AnimatePresence>
       
       {/* Global Background Features */}
-      <RandomMemoryPopup />
+      <Suspense fallback={null}>
+        <RandomMemoryPopup />
+      </Suspense>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo } from 'lucide-react';
-import { db, storage } from '../lib/firebase';
+import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock } from 'lucide-react';
+import { db, storage, logPortalActivity } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { User } from 'firebase/auth';
@@ -25,14 +25,13 @@ interface Note {
   tag: string;
   date: string;
   authorId: string;
+  isLocked?: boolean;
   createdAt: any;
 }
 
-const MenuBar = ({ editor }: { editor: any }) => {
+const MenuBar = ({ editor, onAddImage }: { editor: any, onAddImage: () => void }) => {
   if (!editor) return null;
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // Force re-render on any editor state change to update active states immediately
   const [, setUpdate] = useState(0);
   useEffect(() => {
@@ -50,49 +49,15 @@ const MenuBar = ({ editor }: { editor: any }) => {
     };
   }, [editor]);
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('File harus berupa gambar!');
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const storageRef = sRef(storage, `notes_images/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      
-      editor.chain().focus().setImage({ src: downloadURL }).run();
-    } catch (error: any) {
-      console.error('Upload failed:', error);
-      alert('Gagal mengunggah gambar: ' + error.message);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   const addImage = () => {
-    const choice = window.confirm('Pilih "OK" untuk upload dari perangkat, atau "Cancel" untuk memasukkan URL gambar.');
-    if (choice) {
-      fileInputRef.current?.click();
-    } else {
-      const url = window.prompt('URL Gambar:');
-      if (url) {
-        editor.chain().focus().setImage({ src: url }).run();
-      }
-    }
+    onAddImage();
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 p-2 bg-white dark:bg-[#1a252f] border-b border-gray-100 dark:border-gray-800 sticky top-0 z-10 transition-colors">
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+    <div className="flex items-center gap-0.5 p-1.5 md:p-2 bg-white dark:bg-[#1a252f] border-b border-gray-100 dark:border-gray-800 sticky top-0 z-10 overflow-x-auto whitespace-nowrap scrollbar-hide no-scrollbar transition-colors">
       
       {/* History Actions */}
-      <div className="flex items-center gap-0.5 mr-2">
+      <div className="flex items-center gap-0.5 mr-1 md:mr-2">
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
@@ -287,7 +252,35 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('File harus berupa gambar!');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const storageRef = sRef(storage, `notes_images/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      editor?.chain().focus().setImage({ src: downloadURL }).run();
+    } catch (error: any) {
+      console.error('Upload failed:', error);
+      alert('Gagal mengunggah gambar: ' + error.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
@@ -323,6 +316,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       ] : []),
     ],
     content: '',
+    editable: !selectedNote?.isLocked || isAdmin,
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] p-6 leading-loose text-gray-700 dark:text-gray-200',
@@ -363,6 +357,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
             htmlContent: html,
             updatedAt: Timestamp.now()
           });
+          logPortalActivity('note_update', 'Autosave Catatan', user);
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 3000);
         } catch (e) {
@@ -466,28 +461,52 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         data.push({ ...doc.data() as any, id: doc.id });
       });
       setNotes(data);
+      
+      // Update selectedNote if it exists to reflect changes (like locking)
+      setSelectedNote(prev => {
+        if (!prev) return null;
+        return data.find(n => n.id === prev.id) || null;
+      });
     }, (error) => console.error("Notulensi listener error:", error));
     return () => unsubscribe();
   }, []);
 
   const handleAction = (type: 'delete' | 'edit', id: string) => {
     if (!user) return alert('Login Google dulu');
-    if (!isAdmin) return alert('Fitur ini hanya untuk Admin. Silakan login admin di header.');
+    
+    const n = notes.find(note => note.id === id);
+    if (!n) return;
+
+    if (n.isLocked && !isAdmin) {
+      return alert('Catatan ini telah dikunci oleh Admin. Anda tidak dapat mengubah atau menghapusnya.');
+    }
+
+    if (!isAdmin && n.authorId !== user.uid) {
+       return alert('Anda hanya dapat mengubah/menghapus catatan buatan sendiri.');
+    }
     
     if (type === 'edit') {
-      const n = notes.find(note => note.id === id);
-      if (n) {
-        setNewNote({ 
-          title: n.title, 
-          tag: n.tag
-        });
-        // Remove direct setContent, collaboration will handle it
-        setEditingId(id);
-        setIsAdding(true);
-        setSelectedNote(null);
-      }
+      setNewNote({ 
+        title: n.title, 
+        tag: n.tag
+      });
+      setEditingId(id);
+      setIsAdding(true);
+      setSelectedNote(null);
     } else {
       setConfirmId(id);
+    }
+  };
+
+  const toggleLock = async (id: string, currentStatus: boolean) => {
+    if (!isAdmin) return;
+    try {
+      await updateDoc(doc(db, 'notes', id), {
+        isLocked: !currentStatus,
+        updatedAt: Timestamp.now()
+      });
+    } catch (e: any) {
+      alert('Gagal mengubah status kunci: ' + e.message);
     }
   };
 
@@ -503,6 +522,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         htmlContent: '',
         date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
         authorId: user.uid,
+        isLocked: false,
         createdAt: Timestamp.now()
       });
       
@@ -511,6 +531,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setIsAdding(true);
       setSelectedNote(null);
       editor.commands.setContent('');
+      
+      logPortalActivity('note_create', 'Membuat catatan baru', user);
     } catch (e: any) {
       console.error(e);
       alert('Gagal memulai catatan baru: ' + e.message);
@@ -546,7 +568,6 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       await deleteDoc(doc(db, 'notes', id));
       if (selectedNote?.id === id) setSelectedNote(null);
       setConfirmId(null);
-      alert('Catatan berhasil dihapus.');
     } catch (e: any) {
       console.error("Delete note error detail:", e);
       alert('Gagal menghapus catatan: ' + (e.message || "Izin ditolak oleh server (Permission Denied)"));
@@ -568,10 +589,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
       {/* Sidebar Catatan */}
-      {!isAdding && (
-      <div className="lg:col-span-1 space-y-4">
+      {(!isAdding || !selectedNote) && (
+      <div className={`${(selectedNote || isAdding) ? 'hidden lg:block' : 'block'} lg:col-span-1 space-y-4 pb-20 md:pb-0`}>
         <div className="relative">
           <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
           <input 
@@ -609,8 +630,22 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               }`}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className={`text-[8px] font-black uppercase tracking-[2px] px-2 py-1 rounded-lg ${selectedNote?.id === n.id ? 'bg-white/20 text-white' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-500'}`}>{n.tag}</span>
-                <span className={`text-[9px] font-medium opacity-60 ${selectedNote?.id === n.id ? 'text-white' : 'text-gray-400'}`}>{n.date}</span>
+                <div className="flex items-center gap-2">
+                   <span className={`text-[8px] font-black uppercase tracking-[2px] px-2 py-1 rounded-lg ${selectedNote?.id === n.id ? 'bg-white/20 text-white' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-500'}`}>{n.tag}</span>
+                   {n.isLocked && <Lock size={10} className={selectedNote?.id === n.id ? 'text-white' : 'text-amber-500'} />}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isAdmin && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); toggleLock(n.id, !!n.isLocked); }}
+                      className={`p-1 rounded-md transition-all ${n.isLocked ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-blue-500'}`}
+                      title={n.isLocked ? "Buka Kunci" : "Kunci Catatan"}
+                    >
+                      {n.isLocked ? <Lock size={12}/> : <Unlock size={12}/>}
+                    </button>
+                  )}
+                  <span className={`text-[9px] font-medium opacity-60 ${selectedNote?.id === n.id ? 'text-white' : 'text-gray-400'}`}>{n.date}</span>
+                </div>
               </div>
               <h4 className="font-bold text-sm leading-tight mb-2 line-clamp-1">{n.title}</h4>
               <p className={`text-[10px] line-clamp-1 opacity-70 italic ${selectedNote?.id === n.id ? 'text-blue-50' : 'text-gray-400'}`}>
@@ -633,91 +668,63 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         {isAdding ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
             {/* Header Editor */}
-            <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-white/50 dark:bg-gray-900/50 backdrop-blur-xl">
-              <div className="flex items-center gap-4 flex-1">
-                <button 
-                  onClick={handleExitEditor}
-                  className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
-                  title="Selesai & Kembali"
-                >
-                  <ArrowLeft size={20} />
-                </button>
-                <div className="flex-1 max-w-md">
-                  <input 
-                    type="text" 
-                    placeholder="Judul Catatan..." 
-                    value={newNote.title}
-                    onChange={e => {
-                      const title = e.target.value;
-                      setNewNote(prev => ({...prev, title}));
-                      if (editingId) {
-                        updateDoc(doc(db, 'notes', editingId), { title, updatedAt: Timestamp.now() });
-                      }
-                    }}
-                    className="w-full bg-transparent text-xl font-serif font-bold outline-none border-b-2 border-transparent focus:border-blue-500/30 transition-all placeholder:text-gray-200"
-                  />
+              <div className="p-4 md:p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-white/50 dark:bg-gray-900/50 backdrop-blur-xl gap-4">
+                <div className="flex items-center gap-3 flex-1">
+                  <button 
+                    onClick={handleExitEditor}
+                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
+                    title="Selesai & Kembali"
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <div className="flex-1">
+                    <input 
+                      type="text" 
+                      placeholder="Judul Catatan..." 
+                      value={newNote.title}
+                      onChange={e => {
+                        const title = e.target.value;
+                        setNewNote(prev => ({...prev, title}));
+                        if (editingId) {
+                          updateDoc(doc(db, 'notes', editingId), { title, updatedAt: Timestamp.now() });
+                        }
+                      }}
+                      className="w-full bg-transparent text-lg md:text-xl font-serif font-bold outline-none border-b-2 border-transparent focus:border-blue-500/30 transition-all placeholder:text-gray-200"
+                    />
+                  </div>
                 </div>
                 
-                {/* Live Collaboration Status */}
-                <div className="flex items-center gap-2 px-4">
+                {/* Live Collaboration Status & Tags */}
+                <div className="flex items-center justify-between md:justify-end gap-3 px-1">
                   <div className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-900/30'} border rounded-full transition-colors`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-orange-400'}`} />
-                    <span className={`text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'} tracking-tighter`}>
+                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-orange-400'}`} />
+                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'} tracking-tighter`}>
                       {isConnected ? 'Live' : 'Connecting...'}
                     </span>
                   </div>
 
-                  {saveStatus === 'saving' ? (
-                    <div className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-gray-400">
-                      <Loader2 size={10} className="animate-spin" />
-                      <span>Menyimpan...</span>
-                    </div>
-                  ) : saveStatus === 'saved' ? (
-                    <div className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-green-500 animate-in fade-in">
-                      <Clock size={10} /> <span>Tersimpan</span>
-                    </div>
-                  ) : null}
-                  
-                  <div className="flex -space-x-2 overflow-hidden ml-2">
-                    {activeUsers.slice(0, 3).map((u, i) => (
-                      <div 
-                        key={i} 
-                        className="w-7 h-7 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
-                        style={{ backgroundColor: u.color }}
-                        title={u.name}
-                      >
-                        {u.name.charAt(0).toUpperCase()}
-                      </div>
-                    ))}
-                    {activeUsers.length > 3 && (
-                      <div className="w-7 h-7 rounded-full border-2 border-white dark:border-[#1a252f] bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold text-gray-500">
-                        +{activeUsers.length - 3}
-                      </div>
-                    )}
-                  </div>
+                  <select 
+                    value={newNote.tag}
+                    onChange={e => {
+                      const tag = e.target.value;
+                      setNewNote(prev => ({...prev, tag}));
+                      if (editingId) {
+                        updateDoc(doc(db, 'notes', editingId), { tag, updatedAt: Timestamp.now() });
+                      }
+                    }}
+                    className="px-2 md:px-3 py-1.5 text-[8px] md:text-[9px] font-black uppercase tracking-widest rounded-lg bg-gray-100 dark:bg-gray-800 border-none outline-none focus:ring-1 focus:ring-blue-500/20 text-gray-500"
+                  >
+                    <option value="Rapat">Rapat</option>
+                    <option value="Materi">Materi</option>
+                    <option value="Memo">Memo</option>
+                    <option value="Umum">Umum</option>
+                  </select>
                 </div>
-
-                <select 
-                  value={newNote.tag}
-                  onChange={e => {
-                    const tag = e.target.value;
-                    setNewNote(prev => ({...prev, tag}));
-                    if (editingId) {
-                      updateDoc(doc(db, 'notes', editingId), { tag, updatedAt: Timestamp.now() });
-                    }
-                  }}
-                  className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg bg-gray-50 dark:bg-gray-800 border-none outline-none focus:ring-1 focus:ring-blue-500/20 text-gray-500"
-                >
-                  <option value="Rapat">Rapat</option>
-                  <option value="Materi">Materi</option>
-                  <option value="Memo">Memo</option>
-                  <option value="Umum">Umum</option>
-                </select>
               </div>
-            </div>
 
             {/* Toolbar */}
-            <MenuBar editor={editor} />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+            <MenuBar editor={editor} onAddImage={() => setShowImageModal(true)} />
 
             {/* Editor Area */}
             <div className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent">
@@ -733,8 +740,23 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               <div className="flex items-center gap-3">
                 <span className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-500 text-[9px] font-black uppercase tracking-[3px] rounded-full border border-blue-100 dark:border-blue-800/50 shadow-sm">{selectedNote.tag}</span>
                 <span className="flex items-center gap-2 text-[10px] font-bold text-gray-300"><Clock size={12}/> {selectedNote.date}</span>
+                {selectedNote.isLocked && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-full">
+                    <Lock size={10} className="text-amber-500" />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Locked</span>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1">
+                {isAdmin && (
+                  <button 
+                    onClick={() => toggleLock(selectedNote.id, !!selectedNote.isLocked)}
+                    className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'text-gray-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10'}`}
+                    title={selectedNote.isLocked ? "Buka Kunci" : "Kunci Catatan"}
+                  >
+                    {selectedNote.isLocked ? <Lock size={18}/> : <Unlock size={18}/>}
+                  </button>
+                )}
                 <button 
                   onClick={exportPDF}
                   className="p-2.5 text-gray-300 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/10 rounded-xl transition-all"
@@ -744,15 +766,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 </button>
                 <button 
                   onClick={() => handleAction('edit', selectedNote.id)} 
-                  className="p-2.5 text-gray-300 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 rounded-xl transition-all"
-                  title="Ubah Catatan"
+                  className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed text-gray-300' : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10'}`}
+                  title={selectedNote.isLocked && !isAdmin ? "Catatan Dikunci" : "Ubah Catatan"}
+                  disabled={selectedNote.isLocked && !isAdmin}
                 >
                   <Pencil size={18}/>
                 </button>
                 <button 
                   onClick={() => handleAction('delete', selectedNote.id)} 
-                  className="p-2.5 text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all"
-                  title="Hapus"
+                  className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed text-gray-300' : 'text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10'}`}
+                  title={selectedNote.isLocked && !isAdmin ? "Catatan Dikunci" : "Hapus"}
+                  disabled={selectedNote.isLocked && !isAdmin}
                 >
                   <Trash2 size={18}/>
                 </button>
@@ -791,33 +815,124 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         )}
       </div>
 
-      {/* Custom Confirmation Modal */}
-      {confirmId && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Trash2 className="text-red-500" size={32} />
-            </div>
-            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Catatan ini akan dihapus permanen</p>
-            
-            <div className="grid grid-cols-2 gap-3">
+      {/* Custom Global Modals */}
+      <AnimatePresence>
+        {/* Upload Image Modal */}
+        {showImageModal && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowImageModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-sm rounded-[32px] p-8 shadow-2xl border border-blue-100 dark:border-blue-900/30"
+            >
               <button 
-                onClick={() => setConfirmId(null)}
-                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                onClick={() => setShowImageModal(false)}
+                className="absolute top-6 right-6 text-gray-300 hover:text-red-500 transition-colors"
+                title="Tutup"
               >
-                faqeee
+                <X size={20} />
               </button>
-              <button 
-                onClick={() => deleteNote(confirmId)}
-                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
-              >
-                reyal
-              </button>
-            </div>
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-4">
+                  <ImageIcon size={32} />
+                </div>
+                <h3 className="font-serif text-2xl font-bold">Tambah Gambar</h3>
+                <p className="text-xs text-gray-400 mt-2 uppercase font-bold tracking-[2px]">Pilih metode input gambar</p>
+              </div>
+
+              <div className="space-y-4">
+                <button 
+                  onClick={() => {
+                    setShowImageModal(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="w-full py-4 bg-blue-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
+                >
+                  <Upload size={16} /> Unggah dari Perangkat
+                </button>
+                
+                <div className="flex items-center gap-4 py-2 opacity-30">
+                   <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+                   <span className="text-[10px] font-bold uppercase">Atau</span>
+                   <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase ml-1">Masukkan URL Langsung</p>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      id="image-url-input"
+                      placeholder="https://example.com/image.jpg"
+                      className="flex-1 bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <button 
+                      onClick={() => {
+                        const input = document.getElementById('image-url-input') as HTMLInputElement;
+                        if (input.value) {
+                          editor.chain().focus().setImage({ src: input.value }).run();
+                          setShowImageModal(false);
+                        }
+                      }}
+                      className="px-4 bg-gray-100 dark:bg-gray-800 text-blue-500 rounded-xl hover:bg-blue-200 transition-all"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {confirmId && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmId(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-sm rounded-[32px] p-8 shadow-2xl border border-blue-100 dark:border-blue-900/30 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="text-red-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Catatan ini akan dihapus permanen</p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setConfirmId(null)}
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                >
+                  faqeee
+                </button>
+                <button 
+                  onClick={() => deleteNote(confirmId)}
+                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                >
+                  reyal
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

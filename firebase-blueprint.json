@@ -94,6 +94,46 @@
         "likes": { "type": "array", "items": { "type": "string" } }
       },
       "required": ["type", "url", "userId", "createdAt", "likes"]
+    },
+    "portal_logs": {
+      "title": "Portal Log",
+      "description": "System-wide activity logs",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "details": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "userId", "createdAt"]
+    },
+    "spin_logs": {
+      "title": "Spin Log",
+      "description": "Logs of random wheel spins",
+      "type": "object",
+      "properties": {
+        "winner": { "type": "string" },
+        "spunBy": { "type": "string" },
+        "spunById": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["winner", "spunById", "createdAt"]
+    },
+    "table_activity": {
+      "title": "Table Activity",
+      "description": "Logs for attendance table interactions",
+      "type": "object",
+      "properties": {
+        "tableId": { "type": "string" },
+        "rowId": { "type": "string" },
+        "colId": { "type": "string" },
+        "value": { "type": "boolean" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tableId", "userId", "createdAt"]
     }
   },
   "firestore": {
@@ -105,6 +145,9 @@
     "absenTables": { "schema": "absenTables", "description": "Attendance tables" },
     "absenTables/{tableId}/rows": { "schema": "object", "description": "Rows in attendance table" },
     "absenTables/{tableId}/cols": { "schema": "object", "description": "Columns in attendance table" },
-    "memories": { "schema": "memories", "description": "Shared class moments" }
+    "memories": { "schema": "memories", "description": "Shared class moments" },
+    "portal_logs": { "schema": "portal_logs", "description": "Global activity logs" },
+    "spin_logs": { "schema": "spin_logs", "description": "Wheel spin logs" },
+    "table_activity": { "schema": "table_activity", "description": "Attendance table logs" }
   }
 }

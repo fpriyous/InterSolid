@@ -7,17 +7,19 @@ const SplashCursor = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
     const config = {
-      SIM_RESOLUTION: 128,
-      DYE_RESOLUTION: 1024,
-      DENSITY_DISSIPATION: 1.5, // Mengurangi penguapan agar trail lebih panjang
-      VELOCITY_DISSIPATION: 0.2,
-      PRESSURE: 0.8,
-      PRESSURE_ITERATIONS: 20,
-      CURL: 30,
-      SPLAT_RADIUS: 0.25,
-      SPLAT_FORCE: 6000,
-      SHADING: true,
+      SIM_RESOLUTION: isMobile ? 32 : 64,
+      DYE_RESOLUTION: isMobile ? 256 : 512,
+      DENSITY_DISSIPATION: 2.5, 
+      VELOCITY_DISSIPATION: 0.3,
+      PRESSURE: 0.7,
+      PRESSURE_ITERATIONS: isMobile ? 8 : 12,
+      CURL: isMobile ? 15 : 25,
+      SPLAT_RADIUS: 0.2,
+      SPLAT_FORCE: 4000,
+      SHADING: false,
       COLORFUL: true,
       PAUSED: false,
       BACK_COLOR: { r: 0, g: 0, b: 0 },

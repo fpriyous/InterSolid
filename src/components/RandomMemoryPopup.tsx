@@ -7,18 +7,13 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 export default function RandomMemoryPopup() {
   const [memory, setMemory] = useState<any>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
-    // Sesekali cek untuk menampilkan memori acak (misal setiap 1-3 menit)
-    const scheduleNext = () => {
-      const isFirst = !memory;
-      const delay = isFirst ? 60000 : (180000 + Math.random() * 420000); // 1 minute first, then 3-10 minutes
-      return setTimeout(() => {
-        fetchRandomMemory();
-      }, delay);
-    };
-
-    const fetchRandomMemory = () => {
+    const fetchRandomMemory = async () => {
+      // Don't fetch if tab is not visible
+      if (document.hidden) return;
+      
       const q = query(collection(db, 'memories'), limit(50));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         if (!snapshot.empty) {
@@ -30,14 +25,18 @@ export default function RandomMemoryPopup() {
           // Auto hide after 12 seconds
           setTimeout(() => setIsVisible(false), 12000);
         }
-        unsubscribe();
-        scheduleNext(); // Schedule next after this one finishes or fails
-      });
+        unsubscribe(); // Unsubscribe after one pick
+      }, (error) => console.error("Error fetching random memory:", error));
     };
 
-    let timer = scheduleNext();
-    return () => clearTimeout(timer);
-  }, [memory?.id]);
+    // First delay 1.5 minutes (90,000 ms)
+    // Then every 1.5 minutes
+    const interval = setInterval(() => {
+      fetchRandomMemory();
+    }, 90000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   if (!memory) return null;
 
@@ -45,25 +44,25 @@ export default function RandomMemoryPopup() {
     <AnimatePresence>
       {isVisible && (
         <motion.div
-           initial={{ opacity: 0, scale: 0.5, y: 50, rotate: -10 }}
+           initial={{ opacity: 0, scale: 0.8, y: 50 }}
            animate={{ 
              opacity: 1, 
              scale: 1, 
-             y: 0,
-             rotate: [-2, 2, -2] // Gentle rocking
+             y: 0
            }}
-           exit={{ opacity: 0, scale: 0.8, y: 20, filter: 'blur(10px)' }}
+           exit={{ opacity: 0, scale: 0.8, y: 50, filter: 'blur(10px)' }}
            transition={{ 
-             rotate: { duration: 6, repeat: Infinity, ease: "easeInOut" },
-             default: { type: "spring", damping: 20, stiffness: 100 }
+             type: "spring",
+             damping: 30,
+             stiffness: 200
            }}
-           className="fixed bottom-24 right-6 md:right-10 z-[200] w-48 md:w-56 cursor-pointer group pointer-events-auto"
+           className="fixed bottom-24 right-6 md:right-10 z-[200] w-48 md:w-64 cursor-pointer group pointer-events-auto"
            onClick={() => setIsVisible(false)}
         >
           {/* Ambient Glow */}
-          <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-full scale-75 animate-pulse" />
+          <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full scale-110 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           
-          <div className="relative bg-white/10 dark:bg-black/20 backdrop-blur-3xl border border-white/20 dark:border-white/5 p-2 rounded-2xl shadow-2xl overflow-hidden ring-1 ring-white/20">
+          <div className="relative bg-white dark:bg-[#1a252f] border border-blue-100 dark:border-blue-900/30 p-2.5 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden">
             {/* Minimalist Image Container */}
             <div className="relative aspect-[4/5] rounded-xl overflow-hidden bg-gray-900/50">
               {memory.type === 'image' ? (

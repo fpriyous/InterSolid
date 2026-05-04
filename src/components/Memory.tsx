@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Image as ImageIcon, Video, Upload, X, Loader2, Heart, MessageCircle, Sparkles, ShieldAlert, Box, Grid } from 'lucide-react';
-import { db, storage } from '../lib/firebase';
+import { db, storage, logPortalActivity } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { User } from 'firebase/auth';
@@ -70,15 +70,16 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
         userPhoto: user.photoURL,
         createdAt: Timestamp.now()
       });
+      logPortalActivity('memory_comment', `Komentar di kenangan`, user);
     } catch (error) {
       console.error('Error adding comment:', error);
     }
   };
 
   return (
-    <div className="flex flex-col h-full max-h-[400px] bg-black/20 rounded-3xl overflow-hidden border border-white/5">
-      <div className="p-4 border-b border-white/5 bg-white/5">
-        <h4 className="text-[10px] font-black uppercase tracking-[2px] text-blue-400">Diskusi Kenangan</h4>
+    <div className="flex flex-col h-full max-h-[300px] md:max-h-[400px] bg-black/20 rounded-2xl md:rounded-3xl overflow-hidden border border-white/5">
+      <div className="p-3 md:p-4 border-b border-white/5 bg-white/5">
+        <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[2px] text-blue-400">Diskusi Kenangan</h4>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
@@ -196,7 +197,7 @@ function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: nu
   );
 }
 
-export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User | null }) {
+export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdmin: boolean, user: User | null, targetId?: string | null, setTargetId?: (id: string | null) => void }) {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -211,19 +212,34 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  const [isDragging, setIsDragging] = useState(false);
   const [activeMemory, setActiveMemory] = useState<MemoryItem | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'warehouse'>('grid');
+  const [confirmDelete, setConfirmDelete] = useState<MemoryItem | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'memories'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMemories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MemoryItem)));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MemoryItem));
+      setMemories(data);
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
+
+  // Handle Target ID for deep linking/direct navigation
+  useEffect(() => {
+    if (!loading && targetId && memories.length > 0) {
+      const target = memories.find(m => m.id === targetId);
+      if (target) {
+        setActiveMemory(target);
+        // Clear it after using so it doesn't re-trigger if they stay on page
+        if (setTargetId) setTargetId(null);
+      }
+    }
+  }, [loading, targetId, memories]);
 
   useEffect(() => {
     if (activeMemory || stageMode || showUpload) {
@@ -240,6 +256,39 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
 
     if (file.size > 25 * 1024 * 1024) { // 25MB max raw
       alert('File terlalu besar! Maksimal 25MB agar tidak gagal di tengah jalan.');
+      return;
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (uploading) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (uploading) return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      alert('Hanya file gambar atau video yang diperbolehkan!');
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      alert('File terlalu besar! Maksimal 25MB.');
       return;
     }
 
@@ -337,18 +386,24 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
 
         // Success - Save to Firestore
         await addDoc(collection(db, 'memories'), memoryData);
+        logPortalActivity('memory_upload', `Kenangan: ${memoryData.title}`, user);
 
         // Also add to Calendar automatically
-        await addDoc(collection(db, 'events'), {
-          title: `Memory: ${title || 'Momen Berharga'}`,
-          genre: 'lainnya',
-          date: displayDate,
-          time: '',
-          note: caption || `Kenangan yang dibagikan oleh ${user.displayName || 'Anonim'}`,
-          authorId: user.uid,
-          createdAt: Timestamp.now(),
-          memoryUrl: downloadURL // Optional reference
-        });
+        try {
+          await addDoc(collection(db, 'events'), {
+            title: `Memory: ${title || 'Momen Berharga'}`,
+            genre: 'lainnya',
+            date: displayDate,
+            time: '',
+            note: caption || `Kenangan yang dibagikan oleh ${user.displayName || 'Anonim'}`,
+            authorId: user.uid,
+            createdAt: Timestamp.now(),
+            memoryUrl: downloadURL
+          });
+        } catch (calError) {
+          console.error("Gagal sinkronisasi ke kalender:", calError);
+          // Don't fail the whole memory upload if calendar sync fails
+        }
 
         setUploadProgress(100);
 
@@ -385,16 +440,11 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
   };
 
   const handleDelete = async (memory: MemoryItem) => {
-    if (!isAdmin && user?.uid !== memory.userId) {
-      alert('Anda tidak memiliki izin untuk menghapus kenangan ini.');
-      return;
-    }
-
-    if (!window.confirm('Hapus kenangan ini selamanya?')) return;
-
     try {
       // Delete from Firestore
       await deleteDoc(doc(db, 'memories', memory.id));
+      setConfirmDelete(null);
+      if (activeMemory?.id === memory.id) setActiveMemory(null);
       
       // Delete from Cloudinary via our Backend
       if (memory.publicId) {
@@ -405,7 +455,7 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
         // Fallback for old records without publicId (attempt to parse from URL)
         const urlParts = memory.url.split('/');
         const lastPart = urlParts[urlParts.length - 1];
-        const fileName = lastPart.split('.')[0]; // basic guess
+        const fileName = lastPart.split('.')[0]; 
         
         await fetch(`/api/delete-media/${encodeURIComponent(fileName)}`, {
           method: 'DELETE',
@@ -413,7 +463,8 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
       }
       
     } catch (error: any) {
-      alert('Gagal menghapus: ' + error.message);
+      console.error("Delete memory error:", error);
+      alert('Gagal menghapus: ' + (error.message || "Izin ditolak"));
     }
   };
 
@@ -464,8 +515,8 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
             className="fixed inset-0 z-[300] bg-[#070e15] flex flex-col items-center justify-center overflow-hidden"
           >
             <div className="absolute inset-0 pointer-events-none opacity-20">
-               <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full blur-[120px] animate-pulse" />
-               <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500 rounded-full blur-[120px] animate-pulse delay-1000" />
+               <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full blur-[120px]" />
+               <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500 rounded-full blur-[120px]" />
             </div>
 
             <button 
@@ -518,107 +569,115 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
         )}
       </AnimatePresence>
 
-      {/* Lightbox / Focus Mode */}
       <AnimatePresence>
         {activeMemory && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[400] flex items-center justify-center p-4 backdrop-blur-xl bg-black/90"
-            onClick={() => setActiveMemory(null)}
-          >
-             <button className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors">
-               <X size={32} />
-             </button>
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-0 md:p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 backdrop-blur-2xl bg-black/95 md:bg-black/90"
+              onClick={() => setActiveMemory(null)}
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative w-full h-full md:max-w-6xl md:max-h-[90vh] bg-[#0a1118] md:rounded-[48px] border-white/5 shadow-[0_0_100px_rgba(0,0,0,0.5)] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Close Button Inside Modal */}
+              <button 
+                onClick={() => setActiveMemory(null)}
+                className="absolute top-4 right-4 md:top-6 md:right-6 z-[610] w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 md:bg-white/5 backdrop-blur-md text-white/60 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center border border-white/10 md:border-white/5"
+              >
+                <X size={20} className="md:w-6 md:h-6" />
+              </button>
 
-             <motion.div 
-               initial={{ scale: 0.9, opacity: 0 }}
-               animate={{ scale: 1, opacity: 1 }}
-               className="max-w-5xl w-full flex flex-col items-center gap-6"
-               onClick={e => e.stopPropagation()}
-             >
-                <div className="flex flex-col md:flex-row w-full gap-8">
-                  {/* Media View */}
-                  <div className="flex-1 flex flex-col items-center">
-                    <div className="relative w-full aspect-video md:aspect-auto max-h-[60vh] rounded-[32px] overflow-hidden shadow-2xl border border-white/10 mb-6 group/media">
-                       {activeMemory.type === 'image' ? (
-                         <img src={activeMemory.url} className="w-full h-full object-contain bg-black/40" alt="" />
-                       ) : (
-                         <video src={activeMemory.url} controls autoPlay className="w-full h-full object-contain bg-black/40" />
-                       )}
-                       
-                       {/* Floating Emojis Menu */}
-                       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 p-2 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full opacity-0 group-hover/media:opacity-100 transition-all duration-300">
-                         {EMOJI_LIST.map(emoji => {
-                           const reactors = activeMemory.reactions?.[emoji] || [];
-                           const isMyReaction = reactors.includes(user?.uid || '');
-                           return (
-                             <button
-                               key={emoji}
-                               onClick={() => toggleReaction(activeMemory, emoji)}
-                               className={`w-8 h-8 flex items-center justify-center rounded-full text-base transition-all hover:scale-125 ${isMyReaction ? 'bg-blue-500/20 scale-110 shadow-lg shadow-blue-500/20' : 'hover:bg-white/10'}`}
-                             >
-                               {emoji}
-                             </button>
-                           );
-                         })}
-                       </div>
-                    </div>
-
-                    <div className="w-full space-y-6">
-                       <div className="flex items-center gap-3">
-                          <img src={activeMemory.userPhoto} className="w-10 h-10 rounded-full border-2 border-blue-500" alt="" />
-                          <div className="text-left">
-                             <p className="text-sm font-bold text-white uppercase tracking-widest">{activeMemory.userName}</p>
-                             <p className="text-[10px] text-gray-500 font-medium uppercase">{activeMemory.createdAt?.toDate ? activeMemory.createdAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Baru Saja'}</p>
-                          </div>
-                       </div>
-                       <p className="text-lg md:text-xl text-white font-serif italic opacity-90 leading-relaxed text-left">
-                         "{activeMemory.caption || 'Kenangan manis tanpa kata-kata'}"
-                       </p>
-
-                       <div className="flex flex-wrap items-center gap-2">
-                          {/* Current Reactions List */}
-                          {Object.entries(activeMemory.reactions || {}).map(([emoji, uids]) => {
-                            const reactorIds = uids as any[];
-                            if (reactorIds.length === 0) return null;
-                            return (
-                              <div key={emoji} className="flex items-center gap-1 bg-white/5 border border-white/5 px-2 py-1 rounded-full">
-                                <span className="text-sm">{emoji}</span>
-                                <span className="text-[8px] font-black text-blue-400">{reactorIds.length}</span>
-                              </div>
-                            );
-                          })}
-                       </div>
-
-                       <div className="flex items-center gap-4 pt-2">
-                          <button 
-                            onClick={() => toggleLike(activeMemory)}
-                            className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold text-xs transition-all ${activeMemory.likes?.includes(user?.uid || '') ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'bg-white/10 text-white hover:bg-white/20'}`}
-                          >
-                             <Heart size={14} fill={activeMemory.likes?.includes(user?.uid || '') ? 'currentColor' : 'none'} />
-                             {activeMemory.likes?.length || 0} Suka
-                          </button>
-                          <a 
-                            href={activeMemory.url} 
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-6 py-2 bg-white/10 text-white rounded-full font-bold text-xs hover:bg-white/20 transition-all"
-                          >
-                             Unduh Media
-                          </a>
-                       </div>
-                    </div>
-                  </div>
-
-                  {/* Sidebar - Comments */}
-                  <div className="w-full md:w-80 shrink-0">
-                    <CommentSection memoryId={activeMemory.id} user={user} />
-                  </div>
+              {/* Media View */}
+              <div className="w-full md:flex-1 shrink-0 bg-black flex items-center justify-center relative group/media aspect-square md:aspect-auto">
+                {activeMemory.type === 'image' ? (
+                  <img src={activeMemory.url} className="w-full h-full object-contain" alt="" />
+                ) : (
+                  <video src={activeMemory.url} controls autoPlay className="w-full h-full object-contain" />
+                )}
+                
+                {/* Floating Emojis Menu */}
+                <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 md:p-2 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-full opacity-0 group-hover/media:opacity-100 transition-all duration-300 overflow-x-auto no-scrollbar max-w-[90vw]">
+                  {EMOJI_LIST.map(emoji => {
+                    const reactors = activeMemory.reactions?.[emoji] || [];
+                    const isMyReaction = reactors.includes(user?.uid || '');
+                    return (
+                      <button
+                        key={emoji}
+                        onClick={() => toggleReaction(activeMemory, emoji)}
+                        className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full text-base md:text-lg transition-all hover:scale-125 ${isMyReaction ? 'bg-blue-500/20 scale-110 shadow-lg shadow-blue-500/20' : 'hover:bg-white/10'}`}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })}
                 </div>
-             </motion.div>
-          </motion.div>
+              </div>
+
+              {/* Sidebar - Details & Comments */}
+              <div className="w-full md:w-[380px] h-auto md:h-full flex flex-col bg-[#0d161f] border-t md:border-t-0 md:border-l border-white/5 overflow-hidden">
+                <div className="p-6 md:p-8 space-y-6 overflow-y-auto">
+                   <div className="flex items-center gap-3 md:gap-4">
+                      <img src={activeMemory.userPhoto} className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl border border-blue-500/30" alt="" />
+                      <div className="text-left">
+                         <p className="text-xs md:text-sm font-black text-white uppercase tracking-[2px]">{activeMemory.userName}</p>
+                         <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">{activeMemory.createdAt?.toDate ? activeMemory.createdAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Baru Saja'}</p>
+                      </div>
+                   </div>
+
+                   <div className="space-y-2 md:space-y-3">
+                      <h4 className="text-lg md:text-xl font-serif font-bold text-white leading-tight">{activeMemory.title || 'Momen Berharga'}</h4>
+                      <p className="text-xs md:text-sm text-white/70 font-medium italic leading-relaxed">
+                        "{activeMemory.caption || 'Kenangan manis tanpa kata-kata'}"
+                      </p>
+                   </div>
+
+                   <div className="flex flex-wrap items-center gap-2">
+                      {Object.entries(activeMemory.reactions || {}).map(([emoji, uids]) => {
+                        const reactorIds = uids as any[];
+                        if (reactorIds.length === 0) return null;
+                        return (
+                          <div key={emoji} className="flex items-center gap-1.5 bg-white/5 border border-white/5 px-2.5 py-1 rounded-full">
+                            <span className="text-sm">{emoji}</span>
+                            <span className="text-[10px] font-black text-blue-400">{reactorIds.length}</span>
+                          </div>
+                        );
+                      })}
+                   </div>
+
+                   <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => toggleLike(activeMemory)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-[10px] tracking-widest uppercase transition-all ${activeMemory.likes?.includes(user?.uid || '') ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'bg-white/5 text-white hover:bg-white/10'}`}
+                      >
+                         <Heart size={14} fill={activeMemory.likes?.includes(user?.uid || '') ? 'currentColor' : 'none'} />
+                         {activeMemory.likes?.length || 0} Likes
+                      </button>
+                      <a 
+                        href={activeMemory.url} 
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 text-white rounded-2xl font-black text-[10px] tracking-widest uppercase hover:bg-white/10 transition-all border border-white/5"
+                      >
+                         Download
+                      </a>
+                   </div>
+
+                   {/* Commends Integrated in Sidebar */}
+                   <div className="pt-6 border-t border-white/5">
+                      <CommentSection memoryId={activeMemory.id} user={user} />
+                   </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -713,7 +772,10 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
 
                 {(isAdmin || user?.uid === m.userId) && (
                   <button 
-                    onClick={() => handleDelete(m)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDelete(m);
+                    }}
                     className="absolute top-4 right-4 p-2 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-red-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100"
                   >
                     <Trash2 size={16} />
@@ -770,20 +832,48 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
       )}
 
       {/* Upload Modal */}
-      {showUpload && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => !uploading && setShowUpload(false)} />
-          <div className="relative bg-white dark:bg-[#1a252f] w-full max-w-lg rounded-[40px] overflow-hidden shadow-2xl border border-blue-100 dark:border-blue-900/30">
-            <div className="p-8">
-              <div className="flex justify-between items-center mb-8">
-                <h3 className="font-serif text-2xl font-bold">Bagikan Memories</h3>
-                {!uploading && <button onClick={() => setShowUpload(false)} className="text-gray-300 hover:text-red-500"><X size={24}/></button>}
-              </div>
+      <AnimatePresence>
+        {showUpload && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md" 
+              onClick={() => !uploading && setShowUpload(false)} 
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-lg rounded-[40px] overflow-hidden shadow-2xl border border-blue-100 dark:border-blue-900/30"
+            >
+              <div className="p-8">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="font-serif text-2xl font-bold">Bagikan Memories</h3>
+                  {!uploading && (
+                    <button 
+                      onClick={() => setShowUpload(false)} 
+                      className="w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-red-500 transition-all"
+                    >
+                      <X size={20}/>
+                    </button>
+                  )}
+                </div>
 
               <div className="space-y-6">
                 <div 
                   onClick={() => !uploading && fileInputRef.current?.click()}
-                  className={`relative aspect-video rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-4 group cursor-pointer transition-all ${previewUrl ? 'border-blue-500' : 'border-gray-100 dark:border-gray-800 hover:border-blue-300'}`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`relative aspect-video rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-4 group cursor-pointer transition-all ${
+                    previewUrl 
+                      ? 'border-blue-500' 
+                      : isDragging 
+                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 scale-[1.02] shadow-2xl shadow-blue-500/10' 
+                        : 'border-gray-100 dark:border-gray-800 hover:border-blue-300'
+                  }`}
                 >
                   {previewUrl ? (
                     <div className="absolute inset-0 p-2">
@@ -893,9 +983,52 @@ export default function Memory({ isAdmin, user }: { isAdmin: boolean, user: User
                 </button>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+    </AnimatePresence>
+
+      {/* Custom Delete Confirmation Modal */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDelete(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-sm rounded-[32px] p-8 shadow-2xl border border-blue-100 dark:border-blue-900/30 text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="text-red-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Kenangan ini akan dihapus permanen</p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setConfirmDelete(null)}
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                >
+                  faqeee
+                </button>
+                <button 
+                  onClick={() => handleDelete(confirmDelete)}
+                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                >
+                  reyal
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

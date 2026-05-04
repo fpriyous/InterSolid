@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Vote, Trash2, Plus, CheckCircle2, Lock, Key } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, increment, query, orderBy, Timestamp, getDocs, writeBatch } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -58,10 +59,6 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       alert('Login Google dulu!');
       return;
     }
-    if (!isAdmin) {
-      alert('Fitur ini hanya untuk Admin. Silakan login admin di header.');
-      return;
-    }
     setConfirmId(id);
   };
 
@@ -112,6 +109,11 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
   };
 
   const deletePoll = async (id: string) => {
+    if (!isAdmin) {
+      alert('Fitur ini hanya untuk Admin. Silakan login admin di header.');
+      setConfirmId(null);
+      return;
+    }
     setLoading(true);
     try {
       console.log("Deleting poll and its options:", id);
@@ -125,7 +127,6 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       
       await batch.commit();
       setConfirmId(null);
-      alert('Polling berhasil dihapus.');
     } catch (e: any) {
       console.error("Delete poll error:", e);
       alert('Gagal menghapus polling: ' + (e.message || "Izin ditolak oleh server"));
@@ -136,22 +137,24 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20 md:pb-0">
       <div className="lg:col-span-2 space-y-6">
         {polls.length > 0 ? (
           polls.map((p) => (
-            <div key={p.id} className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm overflow-hidden relative">
-              <div className="flex items-center justify-between mb-6">
+            <div key={p.id} className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-blue-100 dark:border-blue-900/10 p-6 md:p-8 shadow-xl shadow-blue-500/5 overflow-hidden relative transition-all hover:-translate-y-1">
+              <div className="flex items-start justify-between mb-6 md:mb-8 gap-4 px-1">
                 <div>
-                  <h3 className="font-bold text-lg">{p.question}</h3>
-                  <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-widest">{p.totalVotes} Suara Masuk</p>
+                  <h3 className="font-serif text-lg md:text-2xl font-bold leading-tight">{p.question}</h3>
+                  <p className="text-[10px] md:text-xs text-slate-400 mt-2 uppercase font-black tracking-[0.2em]">{p.totalVotes} Suara Masuk</p>
                 </div>
-                <button 
-                  onClick={() => handleAction('delete', p.id)} 
-                  className="p-2 text-gray-300 hover:text-red-500 transition-colors"
-                >
-                  <Trash2 size={18}/>
-                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={() => handleAction('delete', p.id)} 
+                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                  >
+                    <Trash2 size={18}/>
+                  </button>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -200,52 +203,52 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       </div>
 
       <div className="space-y-6">
-        <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
-          <h4 className="font-bold text-sm mb-4">Buat Voting Baru</h4>
+        <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-blue-100 dark:border-blue-900/10 p-6 md:p-8 shadow-sm">
+          <h4 className="font-serif text-lg font-bold mb-6">Buat Voting Baru</h4>
           {user ? (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="text-[10px] font-bold uppercase text-gray-400 block mb-1">Pertanyaan</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Kueri / Pertanyaan</label>
                 <input 
                   type="text" 
                   placeholder="Apa yang ingin divoting?" 
                   value={newPoll.question}
                   onChange={e => setNewPoll({...newPoll, question: e.target.value})}
-                  className="w-full px-4 py-2 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none"
+                  className="w-full px-5 py-3 text-sm rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-300"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-gray-400 block mb-1">Opsi Jawaban</label>
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Opsi Jawaban</label>
                 {newPoll.options.map((opt, i) => (
-                  <div key={i} className="flex gap-2">
+                  <div key={i} className="flex gap-2 group">
                     <input 
                       type="text" 
-                      placeholder={`Opsi ${i + 1}`}
+                      placeholder={`Opsi ke-${i + 1}`}
                       value={opt}
                       onChange={e => {
                         const newOpts = [...newPoll.options];
                         newOpts[i] = e.target.value;
                         setNewPoll({...newPoll, options: newOpts});
                       }}
-                      className="flex-1 px-4 py-2 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none"
+                      className="flex-1 px-5 py-3 text-sm rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-300"
                     />
                     {newPoll.options.length > 2 && (
-                      <button onClick={() => setNewPoll({...newPoll, options: newPoll.options.filter((_, idx) => idx !== i)})} className="text-red-300 hover:text-red-500"><Trash2 size={14}/></button>
+                      <button onClick={() => setNewPoll({...newPoll, options: newPoll.options.filter((_, idx) => idx !== i)})} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
                     )}
                   </div>
                 ))}
                 <button 
                   onClick={() => setNewPoll({...newPoll, options: [...newPoll.options, '']})}
-                  className="w-full py-2 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl text-[10px] font-bold text-gray-400 hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-4 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-500 hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2"
                 >
-                  <Plus size={12}/> Tambah Opsi
+                  <Plus size={14} strokeWidth={3}/> Tambah Opsi Lain
                 </button>
               </div>
               <button 
                 onClick={addPoll}
-                className="w-full py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
+                className="w-full py-4 bg-blue-600 text-white rounded-[24px] text-xs font-black uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-95"
               >
-                Publikasikan Voting
+                Luncurkan Sekarang
               </button>
             </div>
           ) : (
@@ -258,32 +261,46 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       </div>
 
       {/* Custom Confirmation Modal */}
-      {confirmId && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Trash2 className="text-red-500" size={32} />
-            </div>
-            <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-            <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Sesi voting dan seluruh data suara akan dihapus</p>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <button 
-                onClick={() => setConfirmId(null)}
-                className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-              >
-                faqeee
-              </button>
-              <button 
-                onClick={() => confirmId && deletePoll(confirmId)}
-                className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
-              >
-                reyal
-              </button>
-            </div>
+      <AnimatePresence>
+        {confirmId && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmId(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-8 max-w-xs w-full text-center shadow-2xl"
+            >
+              <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="text-red-500" size={32} />
+              </div>
+              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Sesi voting dan seluruh data suara akan dihapus</p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => setConfirmId(null)}
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                >
+                  faqeee
+                </button>
+                <button 
+                  onClick={() => confirmId && deletePoll(confirmId)}
+                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                >
+                  reyal
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

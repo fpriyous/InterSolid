@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { RotateCw, Trash2, Plus, Users, Lock } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { User } from 'firebase/auth';
+import { motion } from 'motion/react';
 
 const COLORS = ['#3a9ce5', '#1168b0', '#63b5ed', '#0d5290', '#9bcff4', '#1a82d4', '#c5e3f9', '#164a72', '#5eb3ee', '#0f3050'];
 
@@ -58,20 +61,45 @@ export default function SpinWheel({ user }: { user: User | null }) {
       const startAngle = i * arc - Math.PI / 2;
       const endAngle = startAngle + arc;
 
+      // Slice background
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, R, startAngle, endAngle);
       ctx.fillStyle = COLORS[i % COLORS.length];
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
       ctx.stroke();
 
+      // Text drawing
       ctx.save();
       ctx.rotate(startAngle + arc / 2);
+      
+      // Dynamic styling based on density
+      const nTotal = members.length;
+      const fontSize = Math.max(7, Math.min(12, Math.floor(350 / nTotal)));
+      const maxTextWidth = R - 40; // Avoid center and edges
+      
       ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(m, R - 15, 0);
+      ctx.font = `bold ${fontSize}px "Inter", sans-serif`;
+      
+      // Smart Truncation
+      let displayText = m;
+      if (ctx.measureText(m).width > maxTextWidth) {
+        let len = m.length;
+        while (ctx.measureText(displayText + '...').width > maxTextWidth && len > 0) {
+          len--;
+          displayText = m.substring(0, len).trim();
+        }
+        displayText += '...';
+      }
+      
+      // Only draw if we have enough space for at least 3 characters
+      if (displayText.length > 0 && nTotal < 60) {
+        ctx.fillText(displayText, R - 15, 0);
+      }
       ctx.restore();
     });
     ctx.restore();
@@ -114,8 +142,19 @@ export default function SpinWheel({ user }: { user: User | null }) {
         const arc = (2 * Math.PI) / n;
         const stopAngle = (Math.PI * 2 - (normalizedAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
         const index = Math.floor(((stopAngle + Math.PI / 2) % (Math.PI * 2)) / arc) % n;
-        setWinner(members[index]);
+        const selectedWinner = members[index];
+        setWinner(selectedWinner);
         setSpinning(false);
+
+        // Log result to Firestore
+        if (user) {
+          addDoc(collection(db, 'spin_logs'), {
+            winner: selectedWinner,
+            spunBy: user.displayName || 'Anonim',
+            spunById: user.uid,
+            createdAt: Timestamp.now()
+          }).catch(console.error);
+        }
       }
     };
 
@@ -131,40 +170,49 @@ export default function SpinWheel({ user }: { user: User | null }) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2 space-y-8 flex flex-col items-center">
-        <div className="bg-white dark:bg-[#1a252f] p-10 rounded-3xl border border-blue-100 dark:border-blue-900/30 shadow-xl flex flex-col items-center gap-8 w-full max-w-md">
-          <div className="relative">
-            <canvas ref={canvasRef} width={360} height={360} className="rounded-full shadow-2xl" />
-            <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-0 h-0 border-t-[15px] border-t-transparent border-b-[15px] border-b-transparent border-r-[30px] border-r-blue-500 drop-shadow-md" />
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20 md:pb-0">
+      <div className="lg:col-span-2 space-y-6 md:space-y-8 flex flex-col items-center">
+        <div className="bg-white dark:bg-[#1a252f] p-6 md:p-10 rounded-[32px] border border-blue-100 dark:border-blue-900/30 shadow-xl flex flex-col items-center gap-6 md:gap-8 w-full max-w-md">
+          <div className="relative w-full aspect-square max-w-[320px] md:max-w-none">
+            <canvas ref={canvasRef} width={window.innerWidth < 640 ? 280 : 360} height={window.innerWidth < 640 ? 280 : 360} className="w-full h-full rounded-full shadow-2xl" />
+            <div className="absolute -right-2 md:-right-4 top-1/2 -translate-y-1/2 w-0 h-0 border-t-[10px] md:border-t-[15px] border-t-transparent border-b-[10px] md:border-b-[15px] border-b-transparent border-r-[20px] md:border-r-[30px] border-r-blue-500 drop-shadow-md" />
           </div>
 
-          <div className="text-center h-12 flex items-center justify-center">
+          <div className="text-center h-12 flex flex-col items-center justify-center">
             {winner ? (
-              <div className="animate-bounce">
-                <span className="text-[10px] text-gray-400 block uppercase font-bold tracking-widest">Terpilih!</span>
-                <span className="font-serif text-2xl font-bold text-blue-500">{winner}</span>
+              <div className="animate-in zoom-in duration-300">
+                <span className="text-[10px] text-slate-400 block uppercase font-black tracking-[0.2em] mb-1">Terpilih:</span>
+                <span className="font-serif text-xl md:text-3xl font-bold text-blue-600 drop-shadow-sm">{winner}</span>
               </div>
             ) : spinning ? (
-              <span className="text-xs text-gray-400 italic">Memutar...</span>
+              <div className="flex flex-col items-center">
+                <div className="w-8 h-1 bg-blue-500/20 rounded-full overflow-hidden">
+                   <motion.div 
+                     animate={{ x: [-32, 32] }} 
+                     transition={{ repeat: Infinity, duration: 1, ease: "linear" }} 
+                     className="w-8 h-full bg-blue-500" 
+                   />
+                </div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Memutar Takdir...</span>
+              </div>
             ) : (
-              <span className="text-xs text-gray-400">Siapa keberuntungan hari ini?</span>
+              <span className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-widest opacity-60">Klik Putar Untuk Memulai!</span>
             )}
           </div>
 
           <button 
             onClick={spin}
             disabled={spinning || members.length < 2}
-            className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl font-serif text-xl font-bold shadow-lg shadow-blue-500/30 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:translate-y-0"
+            className="w-full py-4 md:py-5 bg-blue-600 text-white rounded-2xl md:rounded-[24px] font-black text-sm md:text-base uppercase tracking-[0.2em] shadow-xl shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
           >
-            Putar Sekarang!
+            Putar Sekarang
           </button>
         </div>
 
-        <div className="w-full bg-white dark:bg-[#1a252f] p-8 rounded-3xl border border-blue-100 dark:border-blue-900/30 shadow-sm">
-          <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <div className="w-full bg-white dark:bg-[#1a252f] p-6 md:p-8 rounded-[32px] border border-blue-100 dark:border-blue-900/30 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-bold uppercase text-gray-400">Bagi Kelompok (N):</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Bagi Kelompok:</label>
               <input 
                 type="number" 
                 min={2} 
@@ -174,25 +222,25 @@ export default function SpinWheel({ user }: { user: User | null }) {
                   const val = parseInt(e.target.value);
                   setGroupCount(isNaN(val) ? 2 : val);
                 }}
-                className="w-16 px-3 py-1.5 text-xs rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none"
+                className="w-14 px-2 py-1.5 text-xs font-bold rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 outline-none text-blue-500"
               />
               <button 
                 onClick={splitGroups}
-                className="px-4 py-1.5 bg-blue-50 text-blue-500 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors"
+                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/10"
               >
-                Bagi Otomatis
+                Bagi
               </button>
             </div>
-            <button onClick={() => setGroups([])} className="text-[10px] uppercase font-bold text-gray-400 hover:text-red-500">Reset Kelompok</button>
+            <button onClick={() => setGroups([])} className="text-[9px] uppercase font-black text-slate-300 hover:text-rose-500 tracking-widest transition-colors w-fit">Reset Kelompok</button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {groups.map((group, i) => (
-              <div key={i} className="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/20">
-                <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-2">Kelompok {i + 1}</span>
+              <div key={i} className="bg-slate-50/50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-2">Grup {String(i + 1).padStart(2, '0')}</span>
                 <div className="flex flex-wrap gap-1.5">
                   {group.map(m => (
-                    <span key={m} className="px-2 py-1 bg-white dark:bg-gray-800 rounded-md text-[10px] font-medium shadow-sm border border-gray-100 dark:border-gray-700">{m}</span>
+                    <span key={m} className="px-2 py-1 bg-white dark:bg-slate-800 rounded-md text-[9px] font-bold shadow-sm border border-slate-100 dark:border-slate-700 truncate max-w-full">{m}</span>
                   ))}
                 </div>
               </div>
