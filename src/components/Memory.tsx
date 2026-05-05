@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Trash2, Image as ImageIcon, Video, Upload, X, Loader2, Heart, MessageCircle, Sparkles, ShieldAlert, Box, Grid } from 'lucide-react';
 import { db, storage, logPortalActivity } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, arrayUnion, arrayRemove, getDocs, where } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
@@ -62,6 +62,18 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
     const commentText = newComment.trim();
     setNewComment('');
 
+    // Optimistic Update
+    const tempId = 'temp-' + Date.now();
+    const optimisticComment: Comment = {
+      id: tempId,
+      text: commentText,
+      userId: user.uid,
+      userName: user.displayName || 'Anonim',
+      userPhoto: user.photoURL || undefined,
+      createdAt: Timestamp.now()
+    };
+    setComments(prev => [optimisticComment, ...prev]);
+
     try {
       await addDoc(collection(db, 'memories', memoryId, 'comments'), {
         text: commentText,
@@ -73,6 +85,8 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
       logPortalActivity('memory_comment', `Komentar di kenangan`, user);
     } catch (error) {
       console.error('Error adding comment:', error);
+      // Remove optimistic comment if error
+      setComments(prev => prev.filter(c => c.id !== tempId));
     }
   };
 
@@ -213,9 +227,11 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   const [error, setError] = useState<string | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
-  const [activeMemory, setActiveMemory] = useState<MemoryItem | null>(null);
+  const [activeMemoryId, setActiveMemoryId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'warehouse'>('grid');
   const [confirmDelete, setConfirmDelete] = useState<MemoryItem | null>(null);
+
+  const activeMemory = useMemo(() => memories.find(m => m.id === activeMemoryId) || null, [memories, activeMemoryId]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -229,26 +245,94 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
     return () => unsubscribe();
   }, []);
 
-  // Handle Target ID for deep linking/direct navigation
+  // Global Reconciliation: Ensure every memory has a calendar entry and cleanup orphans
+  useEffect(() => {
+    // Run even if memories.length is 0 to cleanup stray events
+    if (!loading && user) {
+      const syncInternal = async () => {
+        try {
+          const eventsSnap = await getDocs(query(collection(db, 'events'), where('genre', '==', 'memory')));
+          const memoryIdsWithEvents = new Set();
+          
+          const cleanupPromises = [];
+          
+          for (const evDoc of eventsSnap.docs) {
+            const data = evDoc.data();
+            const linkedMemoryId = data.memoryId;
+            
+            if (linkedMemoryId) {
+              const memoryExists = memories.some(m => m.id === linkedMemoryId);
+              if (memoryExists) {
+                memoryIdsWithEvents.add(linkedMemoryId);
+              } else {
+                console.log("[Sync] Deleting orphaned event:", evDoc.id);
+                cleanupPromises.push(deleteDoc(doc(db, 'events', evDoc.id)));
+              }
+            } else {
+              // Old memory event without memoryId link? Delete it to be safe, it'll be recreated if needed
+              cleanupPromises.push(deleteDoc(doc(db, 'events', evDoc.id)));
+            }
+          }
+
+          if (cleanupPromises.length > 0) await Promise.all(cleanupPromises);
+
+          // Check if any memory is missing a calendar entry
+          for (const memory of memories) {
+            if (!memoryIdsWithEvents.has(memory.id)) {
+              console.log("[Sync] Creating missing calendar entry for memory:", memory.id);
+              const eventRef = await addDoc(collection(db, 'events'), {
+                title: memory.title || 'Momen Berharga',
+                genre: 'memory',
+                date: memory.displayDate,
+                time: '',
+                note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`,
+                authorId: memory.userId,
+                createdAt: Timestamp.now(),
+                memoryUrl: memory.url,
+                memoryId: memory.id
+              });
+              await updateDoc(doc(db, 'memories', memory.id), {
+                calendarEventId: eventRef.id
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("[Sync] Reconciliation failed:", err);
+        }
+      };
+      
+      // Delay slightly to ensure states are settled
+      const timer = setTimeout(syncInternal, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, memories.length, user?.uid]);
+
+  // Handle Target ID for deep linking/direct navigation (Robust version)
   useEffect(() => {
     if (!loading && targetId && memories.length > 0) {
+      console.log("[Memory] Attempting navigation to:", targetId);
       const target = memories.find(m => m.id === targetId);
       if (target) {
-        setActiveMemory(target);
-        // Clear it after using so it doesn't re-trigger if they stay on page
-        if (setTargetId) setTargetId(null);
+        // Use a small timeout to ensure the grid is rendered
+        const timer = setTimeout(() => {
+          setActiveMemoryId(target.id);
+          setStageMode(false);
+          // Clean targetId via parent callback
+          if (setTargetId) setTargetId(null);
+        }, 100);
+        return () => clearTimeout(timer);
       }
     }
-  }, [loading, targetId, memories]);
+  }, [loading, targetId, memories.length]);
 
   useEffect(() => {
-    if (activeMemory || stageMode || showUpload) {
+    if (activeMemoryId || stageMode || showUpload) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
     }
     return () => { document.body.style.overflow = 'unset'; };
-  }, [activeMemory, stageMode, showUpload]);
+  }, [activeMemoryId, stageMode, showUpload]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -390,24 +474,33 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
         };
 
         // Success - Save to Firestore
-        await addDoc(collection(db, 'memories'), memoryData);
+        const memoryRef = await addDoc(collection(db, 'memories'), {
+          ...memoryData,
+          calendarEventId: null
+        });
+        const memoryId = memoryRef.id;
         logPortalActivity('memory_upload', `Kenangan: ${memoryData.title}`, user);
 
         // Also add to Calendar automatically
         try {
-          await addDoc(collection(db, 'events'), {
-            title: `Memory: ${title || 'Momen Berharga'}`,
-            genre: 'lainnya',
+          const eventRef = await addDoc(collection(db, 'events'), {
+            title: title || 'Momen Berharga',
+            genre: 'memory',
             date: displayDate,
             time: '',
             note: caption || `Kenangan yang dibagikan oleh ${user.displayName || 'Anonim'}`,
             authorId: user.uid,
             createdAt: Timestamp.now(),
-            memoryUrl: downloadURL
+            memoryUrl: downloadURL,
+            memoryId: memoryId // CRITICAL: Link back to memory
+          });
+          
+          // Update memory with event ID
+          await updateDoc(doc(db, 'memories', memoryId), {
+            calendarEventId: eventRef.id
           });
         } catch (calError) {
           console.error("Gagal sinkronisasi ke kalender:", calError);
-          // Don't fail the whole memory upload if calendar sync fails
         }
 
         setUploadProgress(100);
@@ -445,24 +538,39 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   };
 
   const handleDelete = async (memory: MemoryItem) => {
+    if (!user) return;
+    if (!window.confirm("Hapus kenangan ini? Foto ini juga akan dihapus dari Kalender secara otomatis.")) return;
+
     try {
-      // Delete from Firestore
+      // 1. Delete from Firestore
       await deleteDoc(doc(db, 'memories', memory.id));
-      setConfirmDelete(null);
-      if (activeMemory?.id === memory.id) setActiveMemory(null);
       
-      // Delete from Cloudinary via our Backend
+      // 2. Guaranteed Deletion from Calendar
+      // We look for events by linked memoryId for maximum robustness
+      try {
+        const eventsRef = collection(db, 'events');
+        const q = query(eventsRef, where('memoryId', '==', memory.id));
+        const eventsSnap = await getDocs(q);
+        
+        const deleteOps = eventsSnap.docs.map(d => deleteDoc(doc(db, 'events', d.id)));
+        
+        // Also check if there's a direct calendarEventId stored
+        if ((memory as any).calendarEventId) {
+          deleteOps.push(deleteDoc(doc(db, 'events', (memory as any).calendarEventId)));
+        }
+        
+        await Promise.all(deleteOps);
+        console.log('[Sync] Memory and all related calendar entries deleted');
+      } catch (syncErr) {
+        console.warn('[Sync] Calendar cleanup partially failed:', syncErr);
+      }
+
+      setConfirmDelete(null);
+      if (activeMemoryId === memory.id) setActiveMemoryId(null);
+      
+      // 3. Delete from Cloudinary
       if (memory.publicId) {
         await fetch(`/api/delete-media/${encodeURIComponent(memory.publicId)}`, {
-          method: 'DELETE',
-        }).catch(e => console.warn('Cloudinary delete fail:', e));
-      } else {
-        // Fallback for old records without publicId (attempt to parse from URL)
-        const urlParts = memory.url.split('/');
-        const lastPart = urlParts[urlParts.length - 1];
-        const fileName = lastPart.split('.')[0]; 
-        
-        await fetch(`/api/delete-media/${encodeURIComponent(fileName)}`, {
           method: 'DELETE',
         }).catch(e => console.warn('Cloudinary delete fail:', e));
       }
@@ -475,28 +583,59 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
   const toggleReaction = async (memory: MemoryItem, emoji: string) => {
     if (!user) return alert('Silakan login untuk bereaksi!');
-    const memoryRef = doc(db, 'memories', memory.id);
+    
+    // Optimistic Update
     const currentReactions = memory.reactions || {};
     const usersWhoReacted = currentReactions[emoji] || [];
     const hasReacted = usersWhoReacted.includes(user.uid);
-
     const newUsers = hasReacted 
       ? usersWhoReacted.filter(id => id !== user.uid)
       : [...usersWhoReacted, user.uid];
 
-    await updateDoc(memoryRef, {
-      [`reactions.${emoji}`]: newUsers
-    });
+    // Update local state immediately for snappy feel
+    const updatedMemory = {
+      ...memory,
+      reactions: {
+        ...currentReactions,
+        [emoji]: newUsers
+      }
+    };
+    setMemories(prev => prev.map(m => m.id === memory.id ? updatedMemory : m));
+
+    try {
+      const memoryRef = doc(db, 'memories', memory.id);
+      await updateDoc(memoryRef, {
+        [`reactions.${emoji}`]: newUsers
+      });
+    } catch (err) {
+      console.error('Reaction error:', err);
+      // Revert if error
+      setMemories(prev => prev.map(m => m.id === memory.id ? memory : m));
+    }
   };
 
   const toggleLike = async (memory: MemoryItem) => {
     if (!user) return alert('Silakan login untuk memberikan like!');
-    const memoryRef = doc(db, 'memories', memory.id);
-    const hasLiked = memory.likes?.includes(user.uid);
     
-    await updateDoc(memoryRef, {
-      likes: hasLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
-    });
+    // Optimistic Update
+    const hasLiked = memory.likes?.includes(user.uid);
+    const newLikes = hasLiked 
+      ? memory.likes.filter(id => id !== user.uid)
+      : [...(memory.likes || []), user.uid];
+
+    const updatedMemory = { ...memory, likes: newLikes };
+    setMemories(prev => prev.map(m => m.id === memory.id ? updatedMemory : m));
+
+    try {
+      const memoryRef = doc(db, 'memories', memory.id);
+      await updateDoc(memoryRef, {
+        likes: hasLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
+      });
+    } catch (err) {
+      console.error('Like error:', err);
+      // Revert if error
+      setMemories(prev => prev.map(m => m.id === memory.id ? memory : m));
+    }
   };
 
   if (loading) {
@@ -561,7 +700,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                {memories.length > 0 ? (
                  // Visualizing up to 20 memories for a full scattered effect
                  memories.slice(0, 20).map((m, i) => (
-                   <MemoryFloat key={`${m.id}-float`} memory={m} index={i} onClick={() => setActiveMemory(m)} />
+                   <MemoryFloat key={`${m.id}-float`} memory={m} index={i} onClick={() => setActiveMemoryId(m.id)} />
                  ))
                ) : (
                  <div className="flex flex-col items-center justify-center h-full text-white/20">
@@ -582,7 +721,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 backdrop-blur-2xl bg-black/95 md:bg-black/90"
-              onClick={() => setActiveMemory(null)}
+              onClick={() => setActiveMemoryId(null)}
             />
             
             <motion.div 
@@ -594,7 +733,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             >
               {/* Close Button Inside Modal */}
               <button 
-                onClick={() => setActiveMemory(null)}
+                onClick={() => setActiveMemoryId(null)}
                 className="absolute top-4 right-4 md:top-6 md:right-6 z-[610] w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 md:bg-white/5 backdrop-blur-md text-white/60 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center border border-white/10 md:border-white/5"
               >
                 <X size={20} className="md:w-6 md:h-6" />
@@ -739,7 +878,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
               raw: m
             }))} 
             scale={0.8}
-            onOpenItem={(item) => setActiveMemory(item.raw)}
+            onOpenItem={(item) => setActiveMemoryId(item.id)}
           />
         </div>
       ) : (
@@ -748,7 +887,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             <div key={m.id} className="group bg-white dark:bg-[#1a252f] rounded-[32px] overflow-hidden border border-blue-50 dark:border-blue-900/20 shadow-sm hover:shadow-xl transition-all duration-500">
               <div 
                 className="relative aspect-square overflow-hidden cursor-zoom-in"
-                onClick={() => setActiveMemory(m)}
+                onClick={() => setActiveMemoryId(m.id)}
               >
                 {m.type === 'image' ? (
                   <img 

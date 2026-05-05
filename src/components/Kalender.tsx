@@ -307,42 +307,30 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
             <span className="text-xs text-blue-500 font-sans">{selectedDate}</span>
           </h4>
           <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-            {([...(events[selectedDate] || []), ...(memories[selectedDate] || []).map(m => ({
-              id: m.id,
-              title: m.title || 'Momen Berharga',
-              genre: 'memory',
-              time: '',
-              note: m.caption,
-              date: m.displayDate,
-              authorId: m.userId,
-              memoryUrl: m.url,
-              userName: m.userName
-            }))]).length > 0 ? (
-              [...(events[selectedDate] || []), ...(memories[selectedDate] || []).map(m => ({
-                id: m.id,
-                title: m.title || 'Momen Berharga',
-                genre: 'memory',
-                time: '',
-                note: m.caption,
-                date: m.displayDate,
-                authorId: m.userId,
-                memoryUrl: m.url,
-                userName: m.userName
-              }))].map((e: any) => (
+            {([...(events[selectedDate] || [])]).length > 0 ? (
+              ([...(events[selectedDate] || [])]).map((e: any) => (
                 <div key={e.id} className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-xl flex gap-3 border-l-4 group transition-all hover:bg-white dark:hover:bg-slate-800 shadow-sm hover:shadow-md" style={{ borderLeftColor: e.genre === 'memory' ? '#ec4899' : GENRE_COLORS[e.genre] }}>
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-xs truncate text-slate-800 dark:text-slate-100">{e.title}</div>
+                    <div className="font-bold text-xs truncate text-slate-800 dark:text-slate-100">
+                      {e.genre === 'memory' ? `In Memories: ${e.title}` : e.title}
+                    </div>
                     <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap items-center gap-2">
-                      <span className="uppercase font-black tracking-widest text-[8px]" style={{ color: e.genre === 'memory' ? '#ec4899' : GENRE_COLORS[e.genre] }}>{e.genre}</span>
+                      <span className="uppercase font-black tracking-widest text-[8px]" style={{ color: e.genre === 'memory' ? '#ec4899' : GENRE_COLORS[e.genre] }}>
+                        {e.genre === 'memory' ? 'Shared Moment' : e.genre}
+                      </span>
                       {e.time && <span>• {e.time}</span>}
                       {e.userName && <span className="opacity-60 truncate">By {e.userName}</span>}
                     </div>
-                    {e.memoryUrl && (
+                    {e.genre === 'memory' && (
                       <button 
-                        onClick={() => setActivePage?.('memory', e.id)}
-                        className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-500 rounded-lg text-[9px] font-bold hover:bg-blue-500 hover:text-white transition-all overflow-hidden"
+                        onClick={() => {
+                          const targetId = e.memoryId || e.id;
+                          console.log("Navigating to memory:", targetId);
+                          setActivePage?.('memory', targetId);
+                        }}
+                        className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-pink-500 text-white rounded-lg text-[9px] font-bold hover:bg-pink-600 transition-all shadow-sm active:scale-95"
                       >
-                        <ImageIcon size={10} /> LIHAT MOMEN
+                        <ImageIcon size={10} /> LIHAT FOTO SEKARANG
                       </button>
                     )}
                   </div>

@@ -146,6 +146,7 @@
     "absenTables/{tableId}/rows": { "schema": "object", "description": "Rows in attendance table" },
     "absenTables/{tableId}/cols": { "schema": "object", "description": "Columns in attendance table" },
     "memories": { "schema": "memories", "description": "Shared class moments" },
+    "notes/{noteId}/history": { "schema": "object", "description": "Version history snapshots for notes" },
     "portal_logs": { "schema": "portal_logs", "description": "Global activity logs" },
     "spin_logs": { "schema": "spin_logs", "description": "Wheel spin logs" },
     "table_activity": { "schema": "table_activity", "description": "Attendance table logs" }

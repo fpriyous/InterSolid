@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, ChangeEvent } from 'react';
-import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock } from 'lucide-react';
+import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
+import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock, History, RotateCcw } from 'lucide-react';
 import { db, storage, logPortalActivity } from '../lib/firebase';
-import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, setDoc, where } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, setDoc, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
@@ -29,7 +29,7 @@ interface Note {
   createdAt: any;
 }
 
-const MenuBar = ({ editor, onAddImage }: { editor: any, onAddImage: () => void }) => {
+const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImage: () => void, onOpenHistory: () => void }) => {
   if (!editor) return null;
   
   // Force re-render on any editor state change to update active states immediately
@@ -77,6 +77,18 @@ const MenuBar = ({ editor, onAddImage }: { editor: any, onAddImage: () => void }
           title="Redo (Ctrl+Y)"
         >
           <Redo size={14} strokeWidth={3} />
+        </button>
+
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-800 mx-1" />
+
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
+          title="Lihat Riwayat Perubahan"
+        >
+          <History size={14} strokeWidth={2.5}/>
+          <span className="text-[10px] font-bold hidden md:inline">Riwayat</span>
         </button>
       </div>
 
@@ -338,7 +350,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        history: true, 
+        history: {}, 
       }),
       Underline,
       Image,
@@ -373,6 +385,54 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   }, [yDoc, editingId]); // Re-init when yDoc changes
 
   const [isSaving, setIsSaving] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyDocs, setHistoryDocs] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const lastHistorySave = useRef<number>(0);
+
+  // Fetch History snapshots
+  const fetchNoteHistory = async () => {
+    if (!editingId) return;
+    setLoadingHistory(true);
+    try {
+      const q = query(
+        collection(db, 'notes', editingId, 'history'), 
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setHistoryDocs(data);
+    } catch (e) {
+      console.error('Fetch history error:', e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  // Save history snapshot (Throttled to once per minute of activity)
+  const saveHistorySnapshot = async () => {
+    if (!editor || !editingId || !user) return;
+    const now = Date.now();
+    if (now - lastHistorySave.current < 60000) return; // Minimum 1 minute interval
+
+    const html = editor.getHTML();
+    if (!html || html === '<p></p>') return;
+
+    try {
+      await addDoc(collection(db, 'notes', editingId, 'history'), {
+        htmlContent: html,
+        timestamp: serverTimestamp(),
+        editorName: user.displayName || 'Anonim',
+        editorId: user.uid,
+        editorPhoto: user.photoURL || ''
+      });
+      lastHistorySave.current = now;
+      console.log('[History] Snapshot saved');
+    } catch (e) {
+      console.warn('History save error:', e);
+    }
+  };
 
   // Auto-save result to Firestore (for persistence)
   useEffect(() => {
@@ -409,6 +469,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
             updatedAt: Timestamp.now(),
             updatedBy: user?.uid
           });
+          
+          // Also try to save a history snapshot if significant time passed
+          saveHistorySnapshot();
+
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 3000);
         } catch (e) {
@@ -460,9 +524,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       return alert('Catatan ini telah dikunci oleh Admin. Anda tidak dapat mengubah atau menghapusnya.');
     }
 
-    if (!isAdmin && n.authorId !== user.uid) {
-       return alert('Anda hanya dapat mengubah/menghapus catatan buatan sendiri.');
-    }
+    // REMOVED author-only restriction to allow universal editing as requested
     
     if (type === 'edit') {
       setNewNote({ 
@@ -757,10 +819,128 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
             {/* Toolbar */}
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-            <MenuBar editor={editor} onAddImage={() => setShowImageModal(true)} />
+            <MenuBar 
+              editor={editor} 
+              onAddImage={() => setShowImageModal(true)} 
+              onOpenHistory={() => {
+                fetchNoteHistory();
+                setShowHistory(true);
+              }}
+            />
 
             {/* Editor Area */}
-            <div className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent">
+            <div className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent relative">
+              <AnimatePresence>
+                {showHistory && (
+                    <motion.div 
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="absolute inset-y-0 right-0 w-full sm:w-[320px] bg-white dark:bg-[#1a252f] border-l border-gray-100 dark:border-gray-800 shadow-2xl z-[500] flex flex-col pointer-events-auto"
+                  >
+                    <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900/50">
+                      <div className="flex items-center gap-2">
+                        <History size={16} className="text-amber-500" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Riwayat Perubahan</span>
+                      </div>
+                      <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-all z-10">
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                      {loadingHistory ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-50">
+                           <Loader2 size={24} className="animate-spin text-blue-500" />
+                           <span className="text-[9px] font-bold">Memuat arsip...</span>
+                        </div>
+                      ) : historyDocs.length === 0 ? (
+                        <div className="text-center py-12 opacity-30 italic text-[10px]">Belum ada riwayat tercatat.</div>
+                      ) : (
+                        historyDocs.map((doc, idx) => (
+                          <div key={doc.id} className="group relative">
+                            <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-amber-500/20 group-hover:bg-amber-500 transition-all rounded-full" />
+                            <div className="pl-4">
+                              <p className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mb-1">
+                                {doc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] font-black text-white shrink-0">
+                                  {doc.editorName?.[0]?.toUpperCase()}
+                                </div>
+                                <span className="text-[10px] font-bold truncate">{doc.editorName}</span>
+                              </div>
+                              <button 
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  
+                                  if (!editor) {
+                                    alert("Editor belum siap. Mohon tunggu sampa status 'LIVE SYNC' aktif.");
+                                    return;
+                                  }
+
+                                  const confirmed = window.confirm("Pulihkan ke versi ini? Konten saat ini di editor akan ditimpa untuk SEMUA pengguna.");
+                                  if (!confirmed) return;
+
+                                  try {
+                                    if (editor && yDoc) {
+                                      // Log for debugging
+                                      console.log("[History] Starting restoration transaction for:", doc.id);
+                                      
+                                      // @ts-ignore - access Yjs fragment directly for absolute sync
+                                      const xmlFragment = yDoc.getXmlFragment('default');
+                                      
+                                      // Force a direct Yjs transaction to overwrite the document
+                                      // This ensures the update is broadcasted to all connected clients correctly
+                                      yDoc.transact(() => {
+                                        // 1. Wipe the shared fragment completely
+                                        xmlFragment.delete(0, xmlFragment.length);
+                                        
+                                        // 2. Re-populate with the snapshot content
+                                        // Tiptap Collaboration will sync this repopulation
+                                        editor.commands.setContent(doc.htmlContent, true);
+                                      });
+                                      
+                                      setShowHistory(false);
+                                      setSaveStatus('saving');
+                                      
+                                      if (user) {
+                                        logPortalActivity('note_history_restore', `Memulihkan riwayat catatan [${editingId}]`, user);
+                                      }
+                                      
+                                      console.log("[History] Restore success via Yjs transaction");
+                                    } else {
+                                      // Minimal fallback
+                                      editor?.commands.setContent(doc.htmlContent, true);
+                                      setShowHistory(false);
+                                    }
+                                  } catch (err) {
+                                    console.error("[History] Restoration Critical Error:", err);
+                                    alert("Gagal memulihkan catatan. Silakan hubungi admin.");
+                                  }
+                                }}
+                                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"
+                              >
+                                <RotateCcw size={12} strokeWidth={3} /> PULIHKAN VERSI INI
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-100 dark:border-amber-900/20">
+                      <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium leading-relaxed">
+                        <b>Tips Anti-Vandalisme:</b> Riwayat menyimpan 20 perubahan terakhir secara otomatis. Gunakan tombol pulihkan jika ada konten yang sengaja dirusak.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <EditorContent editor={editor} />
             </div>
           </div>

@@ -48,16 +48,18 @@ service cloud.firestore {
       allow create: if isMember();
       allow update: if isAdmin() || (
         isMember() && 
-        resource.data.authorId == request.auth.uid && 
         resource.data.get('isLocked', false) == false &&
-        request.resource.data.get('isLocked', false) == false &&
-        request.resource.data.authorId == resource.data.authorId
+        request.resource.data.get('isLocked', false) == false
       );
       allow delete: if isAdmin() || (
         isMember() && 
-        resource.data.authorId == request.auth.uid && 
         resource.data.get('isLocked', false) == false
       );
+
+      match /history/{historyId} {
+        allow read: if isMember();
+        allow create: if isMember();
+      }
 
       match /presence/{userId} {
         allow read: if true;
@@ -132,10 +134,21 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isMember();
       allow update: if isMember() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])) ||
-        isAdmin() || (resource.data.userId == request.auth.uid)
+        isAdmin() || 
+        resource.data.userId == request.auth.uid ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'reactions'])
+        )
       );
       allow delete: if isAdmin() || (resource.data.userId == request.auth.uid);
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isMember();
+        allow delete: if isAdmin() || resource.data.userId == request.auth.uid;
+      }
     }
 
     // Portal Logs & Activity Tracking
