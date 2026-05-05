@@ -62,7 +62,7 @@ const MenuBar = ({ editor, onAddImage }: { editor: any, onAddImage: () => void }
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
+          disabled={typeof editor.can().undo !== 'function' || !editor.can().undo()}
           className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 transition-all"
           title="Undo (Ctrl+Z)"
         >
@@ -72,7 +72,7 @@ const MenuBar = ({ editor, onAddImage }: { editor: any, onAddImage: () => void }
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
+          disabled={typeof editor.can().redo !== 'function' || !editor.can().redo()}
           className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 transition-all"
           title="Redo (Ctrl+Y)"
         >
@@ -287,77 +287,21 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   };
 
-  // Presence effect (simple)
-  useEffect(() => {
-    if (!editingId || !user || !isAdding) return;
-    
-    const presenceRef = doc(collection(db, 'notes', editingId, 'presence'), user.uid);
-    const setPresence = async (isActive: boolean) => {
-      try {
-        await setDoc(presenceRef, {
-          name: user.displayName || 'Anonim',
-          color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-          lastActive: Timestamp.now(),
-          isActive
-        }, { merge: true });
-      } catch (e) {
-        console.warn('Presence error:', e);
-      }
-    };
-
-    setPresence(true);
-    const interval = setInterval(() => setPresence(true), 30000); // Heartbeat
-
-    // Clean up
-    return () => {
-      clearInterval(interval);
-      setPresence(false);
-    };
-  }, [editingId, user, isAdding]);
-
-  // Track active users from presence collection
-  useEffect(() => {
-    if (!editingId || !isAdding) return;
-
-    const q = query(collection(db, 'notes', editingId, 'presence'), where('isActive', '==', true));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users: any[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        // Only show if active in last 2 minutes
-        if (data.lastActive?.toDate().getTime() > Date.now() - 120000) {
-          users.push(data);
-        }
-      });
-      setActiveUsers(users);
-    });
-
-    return () => unsubscribe();
-  }, [editingId, isAdding]);
-
   // Handle Yjs and Websocket initialization
   useEffect(() => {
     if (!editingId || !isAdding || !user) return;
 
     const doc = new Y.Doc();
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/collaboration/${editingId}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/collaboration/${editingId}`;
     
+    console.log(`[Collaboration] Handshaking: ${wsUrl}`);
     const wsProvider = new WebsocketProvider(wsUrl, editingId, doc);
     
     wsProvider.on('status', (event: any) => {
+      console.log(`[Collaboration] Websocket status: ${event.status}`);
       setIsConnected(event.status === 'connected');
-      
-      // Seed initial content if Yjs doc is empty and we have firestore data
-      if (event.status === 'connected' && doc.getXmlFragment('default').length === 0) {
-        const note = notes.find(n => n.id === editingId);
-        if (note && note.htmlContent) {
-           // We'll let the user who just connected seed it if they are the only one or if it's truly empty
-           // Tiptap Collaboration handles the complexity, but sometimes we need to push initial state
-           // Actually, Tiptap usually does this fine if we pass 'content' to useEditor, 
-           // but for existing notes being opened for the first time in a session:
-        }
-      }
     });
 
     // Set local awareness for cursors
@@ -370,10 +314,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
     // Update active users from awareness
     const handleAwarenessChange = () => {
-      const states = Array.from(wsProvider.awareness.getStates().values());
+      const states = Array.from(wsProvider.awareness.getStates().entries());
       const active = states
-        .map((s: any) => s.user)
-        .filter(Boolean);
+        .map(([id, s]: [number, any]) => ({
+          clientId: id,
+          ...s.user
+        }))
+        .filter(s => s.name);
       setActiveUsers(active);
     };
 
@@ -391,7 +338,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        history: false, // Disable built-in history as Collaboration handles it
+        history: true, 
       }),
       Underline,
       Image,
@@ -749,33 +696,42 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   {/* Presence avatars */}
                   <div className="flex items-center gap-2">
                     <div className="flex -space-x-1.5 overflow-hidden">
-                      {activeUsers.map((u, i) => (
+                      {activeUsers.map((u) => (
                         <motion.div 
                           initial={{ scale: 0, x: 20 }}
                           animate={{ scale: 1, x: 0 }}
-                          key={i} 
-                          className="w-6 h-6 md:w-8 md:h-8 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all group relative"
-                          style={{ backgroundColor: u.color }}
+                          key={u.clientId} 
+                          className="w-7 h-7 md:w-9 md:h-9 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-black text-white shadow-md transition-all group relative shrink-0"
+                          style={{ backgroundColor: u.color, zIndex: u.isTyping ? 10 : 1 }}
                         >
                           {u.name.charAt(0).toUpperCase()}
                           {u.isTyping && (
-                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center">
-                              <div className="w-1 h-1 bg-white rounded-full animate-bounce" />
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center">
+                              <span className="flex gap-[1px]">
+                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce"></span>
+                              </span>
                             </div>
                           )}
-                          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[8px] rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50">
+                          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900/90 text-white text-[8px] rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm border border-white/10">
                             {u.name} {u.isTyping ? '(Sedang mengetik...)' : ''}
                           </div>
                         </motion.div>
                       ))}
                     </div>
-                    {activeUsers.some(u => u.isTyping) && (
+                    {activeUsers.some(u => u.isTyping && u.name !== user?.displayName) && (
                       <motion.span 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="text-[9px] font-bold text-blue-500 animate-pulse hidden md:block"
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-[9px] font-bold text-blue-500 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-full border border-blue-100 dark:border-blue-900/30 hidden md:flex"
                       >
-                        Seseorang sedang mengetik...
+                        <div className="flex gap-0.5">
+                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" />
+                        </div>
+                        {activeUsers.find(u => u.isTyping && u.name !== user?.displayName)?.name} sedang menulis...
                       </motion.span>
                     )}
                   </div>

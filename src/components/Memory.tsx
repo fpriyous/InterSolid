@@ -330,10 +330,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       
       // Direct Cloudinary Upload (Serverless-friendly)
       // This uses unsigned presets for direct-from-client uploads
-      const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'deemvhgg4').trim();
-      const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'intersolid').trim();
+      const cloudName = 'deemvhgg4'; 
+      const uploadPreset = 'intersolid';
       
-      console.log(`[Cloudinary Config] Active Cloud: ${cloudName}, Active Preset: ${uploadPreset}`);
+      console.log(`[Cloudinary Config] FORCE OVERRIDE - Cloud: ${cloudName}, Preset: ${uploadPreset}`);
       
       const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${isImage ? 'image' : 'video'}/upload`;
       

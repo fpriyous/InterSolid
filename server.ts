@@ -176,10 +176,14 @@ async function startServer() {
     const parts = url.pathname.split('/').filter(Boolean);
     const roomName = parts.length > 0 ? parts[parts.length - 1] : 'default';
     
-    console.log(`[Collaboration] New connection for room: ${roomName}`);
+    console.log(`[Collaboration] 🟢 New client connected to room: ${roomName} (Total clients: ${wss.clients.size})`);
     
+    ws.on('close', () => {
+      console.log(`[Collaboration] 🔴 Client disconnected from room: ${roomName} (Remaining: ${wss.clients.size})`);
+    });
+
     ws.on('error', (err) => {
-      console.error(`[Collaboration] WebSocket error for room ${roomName}:`, err);
+      console.error(`[Collaboration] ❌ WebSocket error for room ${roomName}:`, err);
     });
 
     setupWSConnection(ws, req, { docName: roomName, gc: true });
