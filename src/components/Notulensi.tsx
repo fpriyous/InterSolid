@@ -11,6 +11,10 @@ import Underline from '@tiptap/extension-underline';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import html2pdf from 'html2pdf.js';
 
 interface Note {
@@ -249,7 +253,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [loading, setLoading] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
-  const isConnected = true; // Simplified connection status
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
+  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
+  const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -328,9 +335,64 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     return () => unsubscribe();
   }, [editingId, isAdding]);
 
+  // Handle Yjs and Websocket initialization
+  useEffect(() => {
+    if (!editingId || !isAdding || !user) return;
+
+    const doc = new Y.Doc();
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/collaboration/${editingId}`;
+    
+    const wsProvider = new WebsocketProvider(wsUrl, editingId, doc);
+    
+    wsProvider.on('status', (event: any) => {
+      setIsConnected(event.status === 'connected');
+      
+      // Seed initial content if Yjs doc is empty and we have firestore data
+      if (event.status === 'connected' && doc.getXmlFragment('default').length === 0) {
+        const note = notes.find(n => n.id === editingId);
+        if (note && note.htmlContent) {
+           // We'll let the user who just connected seed it if they are the only one or if it's truly empty
+           // Tiptap Collaboration handles the complexity, but sometimes we need to push initial state
+           // Actually, Tiptap usually does this fine if we pass 'content' to useEditor, 
+           // but for existing notes being opened for the first time in a session:
+        }
+      }
+    });
+
+    // Set local awareness for cursors
+    const color = user.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16);
+    wsProvider.awareness.setLocalStateField('user', {
+      name: user.displayName || 'Anonim',
+      color: color,
+      isTyping: false
+    });
+
+    // Update active users from awareness
+    const handleAwarenessChange = () => {
+      const states = Array.from(wsProvider.awareness.getStates().values());
+      const active = states
+        .map((s: any) => s.user)
+        .filter(Boolean);
+      setActiveUsers(active);
+    };
+
+    wsProvider.awareness.on('change', handleAwarenessChange);
+
+    setYDoc(doc);
+    setProvider(wsProvider);
+
+    return () => {
+      wsProvider.disconnect();
+      doc.destroy();
+    };
+  }, [editingId, isAdding, user]);
+
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        history: false, // Disable built-in history as Collaboration handles it
+      }),
       Underline,
       Image,
       TextAlign.configure({
@@ -339,8 +401,21 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       Placeholder.configure({
         placeholder: 'Mulai mengetik catatan materi atau rapat di sini...',
       }),
+      // Only enable collaboration if we have a document
+      ...(yDoc ? [
+        Collaboration.configure({
+          document: yDoc,
+        }),
+        CollaborationCursor.configure({
+          provider: provider,
+          user: {
+            name: user?.displayName || 'Anonim',
+            color: user?.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16),
+          },
+        }),
+      ] : []),
     ],
-    content: '',
+    content: (notes.find(n => n.id === editingId)?.htmlContent) || '',
     editable: !selectedNote?.isLocked || isAdmin,
     editorProps: {
       attributes: {
@@ -348,50 +423,33 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         style: 'pointer-events: auto !important;'
       },
     },
-    onUpdate: ({ editor }) => {
-      if (isAdding && editingId) {
-        setSaveStatus('saving');
-      }
-    }
-  });
+  }, [yDoc, editingId]); // Re-init when yDoc changes
 
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
 
-  // Load existing content when editing
+  // Auto-save result to Firestore (for persistence)
   useEffect(() => {
-    if (editor && isAdding && editingId) {
-      const note = notes.find(n => n.id === editingId);
-      if (note && note.htmlContent && editor.getHTML() === '<p></p>') {
-        editor.commands.setContent(note.htmlContent);
-      }
-    }
-  }, [editor, isAdding, editingId, notes]);
-
-  // Handle remote updates (simple real-time)
-  useEffect(() => {
-    if (!editor || !editingId || !isAdding) return;
-
-    const unsubscribe = onSnapshot(doc(db, 'notes', editingId), (doc) => {
-      const data = doc.data();
-      if (data && data.htmlContent && data.updatedBy !== user?.uid) {
-        const currentHtml = editor.getHTML();
-        if (data.htmlContent !== currentHtml) {
-          // Only update if difference is significant to avoid cursor jumps
-          editor.commands.setContent(data.htmlContent, false);
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [editor, editingId, isAdding, user]);
-
-  // Auto-save effect
-  useEffect(() => {
-    if (!editor || !isAdding || !editingId) return;
+    if (!editor || !isAdding || !editingId || !isConnected || !provider) return;
 
     let timeout: any;
+    let typingTimeout: any;
+
     const handleUpdate = () => {
+      // Set typing to true
+      provider.awareness.setLocalStateField('user', {
+        ...provider.awareness.getLocalState()?.user,
+        isTyping: true
+      });
+
+      // Clear typing after 2 seconds of inactivity
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        provider.awareness.setLocalStateField('user', {
+          ...provider.awareness.getLocalState()?.user,
+          isTyping: false
+        });
+      }, 2000);
+
       setSaveStatus('saving');
       clearTimeout(timeout);
       timeout = setTimeout(async () => {
@@ -410,15 +468,16 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
         }
-      }, 1500);
+      }, 5000); // 5s debounce for persistent storage, Yjs handles the real-time sync
     };
 
     editor.on('update', handleUpdate);
     return () => {
       editor.off('update', handleUpdate);
       clearTimeout(timeout);
+      clearTimeout(typingTimeout);
     };
-  }, [editor, isAdding, editingId, user]);
+  }, [editor, isAdding, editingId, user, isConnected, provider]);
 
   const filteredNotes = notes.filter(n => 
     n.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -641,19 +700,30 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         {isAdding ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
             {/* Header Editor */}
-              <div className="p-4 md:p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-white/50 dark:bg-gray-900/50 backdrop-blur-xl gap-4">
-                <div className="flex items-center gap-3 flex-1">
+              <div className="p-4 md:p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-white dark:bg-[#1a252f] backdrop-blur-xl gap-4">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                   <button 
                     onClick={handleExitEditor}
-                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
-                    title="Selesai & Kembali"
+                    className="p-2.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0"
+                    title="Simpan & Keluar"
                   >
-                    <ArrowLeft size={18} />
+                    <ArrowLeft size={18} strokeWidth={2.5} />
                   </button>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-blue-500/60 leading-none">Dokumen Berbagi</span>
+                      {saveStatus === 'saving' && (
+                        <span className="flex items-center gap-1 text-[9px] text-gray-400 animate-pulse">
+                          <Loader2 size={8} className="animate-spin" /> Menyimulasikan...
+                        </span>
+                      )}
+                      {saveStatus === 'saved' && (
+                        <span className="text-[9px] text-green-500 font-bold">Tersimpan ke Cloud</span>
+                      )}
+                    </div>
                     <input 
                       type="text" 
-                      placeholder="Judul Catatan..." 
+                      placeholder="Judul Dokumen..." 
                       value={newNote.title}
                       onChange={e => {
                         const title = e.target.value;
@@ -662,7 +732,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                           updateDoc(doc(db, 'notes', editingId), { title, updatedAt: Timestamp.now() });
                         }
                       }}
-                      className="w-full bg-transparent text-lg md:text-xl font-serif font-bold outline-none border-b-2 border-transparent focus:border-blue-500/30 transition-all placeholder:text-gray-200"
+                      className="w-full bg-transparent text-lg md:text-xl font-bold outline-none text-slate-900 dark:text-white truncate"
                     />
                   </div>
                 </div>
@@ -677,17 +747,37 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   </div>
 
                   {/* Presence avatars */}
-                  <div className="flex -space-x-1.5 overflow-hidden">
-                    {activeUsers.map((u, i) => (
-                      <div 
-                        key={i} 
-                        className="w-6 h-6 md:w-7 md:h-7 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all"
-                        style={{ backgroundColor: u.color }}
-                        title={u.name}
+                  <div className="flex items-center gap-2">
+                    <div className="flex -space-x-1.5 overflow-hidden">
+                      {activeUsers.map((u, i) => (
+                        <motion.div 
+                          initial={{ scale: 0, x: 20 }}
+                          animate={{ scale: 1, x: 0 }}
+                          key={i} 
+                          className="w-6 h-6 md:w-8 md:h-8 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[8px] font-black text-white shadow-sm transition-all group relative"
+                          style={{ backgroundColor: u.color }}
+                        >
+                          {u.name.charAt(0).toUpperCase()}
+                          {u.isTyping && (
+                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center">
+                              <div className="w-1 h-1 bg-white rounded-full animate-bounce" />
+                            </div>
+                          )}
+                          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[8px] rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50">
+                            {u.name} {u.isTyping ? '(Sedang mengetik...)' : ''}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                    {activeUsers.some(u => u.isTyping) && (
+                      <motion.span 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-[9px] font-bold text-blue-500 animate-pulse hidden md:block"
                       >
-                        {u.name.charAt(0).toUpperCase()}
-                      </div>
-                    ))}
+                        Seseorang sedang mengetik...
+                      </motion.span>
+                    )}
                   </div>
 
                   <select 

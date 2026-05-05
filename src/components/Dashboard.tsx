@@ -212,24 +212,26 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
   }, []);
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    // Get today's date in WIB (UTC+7) or local format YYYY-MM-DD
+    const now = new Date();
+    // Offset for WIB if needed, but simple local date is usually best for the user
+    const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
     
-    // 1. Fetch Next Events - Robust: fetch all and filter in memory to avoid index issues
+    // 1. Fetch Next Events - Robust: fetch all and filter in memory
     const eventsQuery = query(collection(db, 'events'));
     const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Filter & Sort In-Memory
       const upcoming = data
         .filter((e: any) => {
           if (!e.date) return false;
-          // Bandingkan string YYYY-MM-DD
-          return e.date >= today;
+          // Simple string comparison for YYYY-MM-DD
+          return e.date >= todayStr;
         })
         .sort((a: any, b: any) => a.date.localeCompare(b.date))
         .slice(0, 3);
 
-      console.log(`[Dashboard] Agenda Sync: Found ${data.length} total, filtered ${upcoming.length} upcoming.`);
+      console.log(`[Dashboard] Agenda Sync: Found ${data.length} total docs, matching ${upcoming.length} upcoming for date ${todayStr}`);
       setNextEvents(upcoming);
     }, (error) => {
       console.error("[Dashboard] Event sync error:", error);
@@ -266,7 +268,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         
         const [memCount, eventCount, logCount] = await Promise.all([
           getCountFromServer(memoriesColl),
-          getCountFromServer(query(eventsColl, where('date', '>=', today))),
+          getCountFromServer(query(eventsColl, where('date', '>=', todayStr))),
           getCountFromServer(logsColl)
         ]);
 

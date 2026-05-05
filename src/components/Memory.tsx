@@ -333,7 +333,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       const cloudName = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'deemvhgg4').trim();
       const uploadPreset = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'intersolid').trim();
       
-      console.log(`[Cloudinary Config] Cloud: ${cloudName}, Preset: ${uploadPreset}`);
+      console.log(`[Cloudinary Config] Active Cloud: ${cloudName}, Active Preset: ${uploadPreset}`);
       
       const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${isImage ? 'image' : 'video'}/upload`;
       
@@ -361,9 +361,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           });
 
           if (message.toLowerCase().includes("preset")) {
-            throw new Error(`PRESET TIDAK DITEMUKAN: Cloudinary menolak ID '${uploadPreset}'. 
-            SOLUSI: Silakan cek di Cloudinary > Settings > Upload. 
-            PASTIKAN ID yang tertulis di kolom paling kanan (yang ada ikon kotak copy-nya) adalah benar-benar 'intersolid'.`);
+            throw new Error(`PRESET SALAH: Cloudinary tidak menemukan ID '${uploadPreset}'. 
+            SOLUSI: 
+            1. Pastikan di Cloudinary Settings > Upload, ada preset bernama '${uploadPreset}'.
+            2. Pastikan Tipenya adalah 'Unsigned' (Foto yang kamu kirim tadi sudah benar: intersolid - Unsigned).`);
           }
           throw new Error(message);
         }
