@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Download, Table, Lock, Unlock, Check, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
+import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { 
   collection, 
   addDoc, 
@@ -59,8 +59,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
     const q = query(collection(db, 'absenTables'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: TableData[] = [];
-      snapshot.forEach((doc) => {
-        data.push({ ...doc.data() as any, id: doc.id });
+      snapshot.forEach((docSnap) => {
+        data.push({ ...docSnap.data() as any, id: docSnap.id });
       });
       // Sort manually to handle missing createdAt or non-Timestamp types
       data.sort((a: any, b: any) => {
@@ -72,11 +72,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       setLoading(false);
     }, (error) => {
       console.error("Absen tables listener error:", error);
-      if (error.code === 'permission-denied') {
-        alert("Gagal memuat daftar tabel: Izin ditolak. Anda tetap bisa melihat data yang sudah terbuka.");
-      } else {
-        alert("Gagal memuat daftar tabel: " + error.message);
-      }
+      handleFirestoreError(error, OperationType.LIST, 'absenTables');
       setLoading(false);
     });
     return () => unsubscribe();
@@ -158,6 +154,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
         isLocked: !currentStatus
       });
     } catch (e: any) {
+      handleFirestoreError(e, OperationType.UPDATE, `absenTables/${tableId}`);
       alert('Gagal mengubah status kunci: ' + e.message);
     }
   };
@@ -281,6 +278,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       }).catch(console.error);
     } catch (e: any) {
       console.error("Error updating check:", e);
+      handleFirestoreError(e, OperationType.UPDATE, `absenTables/${activeTableId}/rows/${rowId}`);
       alert("Gagal mengupdate data: " + (e.message || e.toString()));
     }
   };

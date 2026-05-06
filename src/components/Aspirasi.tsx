@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, Send, Smile, Image as ImageIcon, Trash2, Heart, ShieldAlert, Key, Lock, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, logPortalActivity } from '../lib/firebase';
+import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, Timestamp, orderBy, query, increment, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
@@ -40,11 +40,14 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
     const q = query(collection(db, 'aspirasi'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs: AspirasiMessage[] = [];
-      snapshot.forEach((doc) => {
-        msgs.push({ ...doc.data() as AspirasiMessage, id: doc.id });
+      snapshot.forEach((docSnap) => {
+        msgs.push({ ...docSnap.data() as AspirasiMessage, id: docSnap.id });
       });
       setMessages(msgs);
-    }, (error) => console.error("Aspirasi listener error:", error));
+    }, (error) => {
+      console.error("Aspirasi listener error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'aspirasi');
+    });
     return () => unsubscribe();
   }, []);
 
@@ -67,7 +70,8 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
       setInputText('');
       setSelectedSticker('');
       setShowStickers(false);
-    } catch (e) {
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.CREATE, 'aspirasi');
       console.error(e);
     }
   };
@@ -99,7 +103,8 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
       }
 
       await updateDoc(doc(db, 'aspirasi', m.id), updates);
-    } catch (e) {
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.UPDATE, `aspirasi/${m.id}`);
       console.error(e);
     }
   };
@@ -114,7 +119,8 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
         likes: isLiked ? increment(-1) : increment(1),
         likedBy: isLiked ? arrayRemove(uid) : arrayUnion(uid)
       });
-    } catch (e) {
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.UPDATE, `aspirasi/${m.id}`);
       console.error(e);
     }
   };

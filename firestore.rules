@@ -1,173 +1,67 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 1. GLOBAL ADMIN ACCESS (NUCLEAR RULE)
-    // This allows the DEWA (fpriyous@gmail.com) to do EVERYTHING.
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null && (
-        request.auth.token.email.lower() == 'fpriyous@gmail.com'
-      );
-    }
-
+    // Basic helpers
     function isSignedIn() {
       return request.auth != null;
     }
-
-    function isDewa() {
-      return isSignedIn() && request.auth.token.email.lower() == 'fpriyous@gmail.com';
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        isDewa() ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
-    }
-
-    function isMember() {
-      return isSignedIn();
-    }
-
-    // 2. SPECIFIC COLLECTION RULES
     
-    // Announcements
+    function isDewa() {
+      return isSignedIn() && request.auth.token.email == 'fpriyous@gmail.com';
+    }
+
+    match /{document=**} {
+      allow read, write: if isDewa();
+    }
+
+    // Collection rules
     match /announcements/{id} {
       allow read: if true;
-      allow create: if isMember();
-      allow update, delete: if isAdmin() || (isMember() && resource.data.authorId == request.auth.uid);
+      allow write: if isSignedIn();
     }
-
     match /events/{id} {
       allow read: if true;
-      allow write: if isMember();
+      allow write: if isSignedIn();
     }
-
-    match /notes/{id} {
+    match /notes/{allPaths=**} {
       allow read: if true;
-      allow create: if isMember();
-      allow update: if isAdmin() || (
-        isMember() && 
-        resource.data.get('isLocked', false) == false &&
-        request.resource.data.get('isLocked', false) == false
-      );
-      allow delete: if isAdmin() || (
-        isMember() && 
-        resource.data.get('isLocked', false) == false
-      );
-
-      match /history/{historyId} {
-        allow read: if isMember();
-        allow create: if isMember();
-      }
-
-      match /presence/{userId} {
-        allow read: if true;
-        allow write: if isSignedIn() && request.auth.uid == userId;
-      }
+      allow write: if isSignedIn();
     }
-
-    match /polls/{id} {
+    match /polls/{allPaths=**} {
       allow read: if true;
-      allow create: if isMember();
-      allow delete: if isAdmin();
-      allow update: if isMember();
-      
-      match /options/{optId} {
-        allow read: if true;
-        allow create, delete: if isAdmin();
-        allow update: if isMember();
-      }
+      allow write: if isSignedIn();
     }
-
-    // Aspirasi
     match /aspirasi/{id} {
       allow read: if true;
-      allow create: if isMember();
-      allow update: if isMember(); // Reactions
-      allow delete: if isAdmin();
+      allow write: if isSignedIn();
     }
-
-    // Attendance Tables
-    match /absenTables/{id} {
+    match /absenTables/{allPaths=**} {
       allow read: if true;
-      allow create: if isMember();
-      allow update: if isAdmin() || (
-        isMember() && 
-        resource.data.isLocked == false && 
-        request.resource.data.isLocked == false
-      );
-      allow delete: if isAdmin();
-
-      match /cols/{colId} {
-        allow read: if true;
-        allow write: if isAdmin() || (
-          isMember() && 
-          get(/databases/$(database)/documents/absenTables/$(id)).data.isLocked == false
-        );
-      }
-
-      match /rows/{rowId} {
-        allow read: if true;
-        allow write: if isAdmin() || (
-          isMember() && 
-          get(/databases/$(database)/documents/absenTables/$(id)).data.isLocked == false
-        );
-      }
+      allow write: if isSignedIn();
     }
-
-    // Notifications
     match /notifications/{id} {
-      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
-      allow delete: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
-      allow create: if true;
-      allow update: if isAdmin();
+      allow read, write: if true;
     }
-
     match /admins/{id} {
-      allow read, write: if isSignedIn() && request.auth.uid == id;
-      allow read: if isAdmin();
-    }
-
-    // Memories (Class Moments)
-    match /memories/{id} {
       allow read: if true;
-      allow create: if isMember();
-      allow update: if isMember() && (
-        isAdmin() || 
-        resource.data.userId == request.auth.uid ||
-        (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'reactions'])
-        )
-      );
-      allow delete: if isAdmin() || (resource.data.userId == request.auth.uid);
-
-      match /comments/{commentId} {
-        allow read: if true;
-        allow create: if isMember();
-        allow delete: if isAdmin() || resource.data.userId == request.auth.uid;
-      }
+      allow write: if isSignedIn();
     }
-
-    // Portal Logs & Activity Tracking
+    match /memories/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
     match /portal_logs/{id} {
-      allow read: if isMember();
-      allow create: if isMember();
-      allow update, delete: if isAdmin();
+      allow read, create: if true;
+      allow update, delete: if isSignedIn();
     }
-
     match /spin_logs/{id} {
-      allow read: if true;
-      allow create: if isMember();
-      allow update, delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
-
     match /table_activity/{id} {
-      allow read: if true;
-      allow create: if isMember();
-      allow update, delete: if isAdmin();
+      allow read, write: if isSignedIn();
+    }
+    match /test/connection {
+      allow read, write: if true;
     }
   }
 }

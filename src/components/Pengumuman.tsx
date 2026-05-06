@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, Trash2, Plus, Info, AlertCircle, Megaphone, Lock, Pencil, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, Timestamp, orderBy, query, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
@@ -26,29 +26,17 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
     const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: Announcement[] = [];
-      snapshot.forEach((doc) => {
-        data.push({ ...doc.data() as Announcement, id: doc.id });
+      snapshot.forEach((docSnap) => {
+        data.push({ ...docSnap.data() as Announcement, id: docSnap.id });
       });
       setAnnouncements(data);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'announcements');
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
-
-  const handleFirestoreError = (error: any, operation: string) => {
-    const errInfo = {
-      error: error.message,
-      operation,
-      path: 'announcements',
-      auth: {
-        uid: user?.uid,
-        email: user?.email,
-        emailVerified: user?.emailVerified
-      }
-    };
-    console.error('Firestore Error:', JSON.stringify(errInfo));
-    alert('Gagal: ' + (error.message.includes('permission') ? 'Izin ditolak (Hanya Member/Admin)' : error.message));
-  };
 
   const addAnnouncement = async () => {
     if (!user) return alert('Silakan login dulu');
@@ -77,7 +65,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
       setEditingId(null);
       setForm({ title: '', content: '', priority: 'medium' });
     } catch (e: any) {
-      handleFirestoreError(e, editingId ? 'update' : 'create');
+      handleFirestoreError(e, editingId ? OperationType.UPDATE : OperationType.CREATE, `announcements/${editingId || ''}`);
     }
   };
 
@@ -97,7 +85,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
       await deleteDoc(doc(db, 'announcements', id));
       setConfirmId(null);
     } catch (e: any) {
-      handleFirestoreError(e, 'delete');
+      handleFirestoreError(e, OperationType.DELETE, `announcements/${id}`);
       setConfirmId(null);
     }
   };

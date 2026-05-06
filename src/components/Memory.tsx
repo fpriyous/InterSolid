@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Plus, Trash2, Image as ImageIcon, Video, Upload, X, Loader2, Heart, MessageCircle, Sparkles, ShieldAlert, Box, Grid } from 'lucide-react';
-import { db, storage, logPortalActivity } from '../lib/firebase';
+import { db, storage, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, arrayUnion, arrayRemove, getDocs, where } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { User } from 'firebase/auth';
@@ -49,8 +49,11 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
       orderBy('createdAt', 'desc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)));
+      setComments(snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Comment)));
       setLoading(false);
+    }, (error) => {
+      console.error("Comments list error:", error);
+      handleFirestoreError(error, OperationType.LIST, `memories/${memoryId}/comments`);
     });
     return () => unsubscribe();
   }, [memoryId]);
@@ -83,8 +86,9 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
         createdAt: Timestamp.now()
       });
       logPortalActivity('memory_comment', `Komentar di kenangan`, user);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding comment:', error);
+      handleFirestoreError(error, OperationType.CREATE, `memories/${memoryId}/comments`);
       // Remove optimistic comment if error
       setComments(prev => prev.filter(c => c.id !== tempId));
     }
@@ -238,71 +242,124 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   useEffect(() => {
     const q = query(collection(db, 'memories'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MemoryItem));
+      const data = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as MemoryItem));
       setMemories(data);
       setLoading(false);
+    }, (error) => {
+      console.error("Memories list error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'memories');
     });
     return () => unsubscribe();
   }, []);
 
   // Global Reconciliation: Ensure every memory has a calendar entry and cleanup orphans
   useEffect(() => {
-    // Run even if memories.length is 0 to cleanup stray events
+    // Run after initial loading to ensure data is available
     if (!loading && user) {
       const syncInternal = async () => {
         try {
+          console.log("[Sync] Starting global calendar reconciliation...");
           const eventsSnap = await getDocs(query(collection(db, 'events'), where('genre', '==', 'memory')));
-          const memoryIdsWithEvents = new Set();
           
-          const cleanupPromises = [];
+          // Map of memoryId -> array of event IDs
+          const memoryIdToEvents: Record<string, string[]> = {};
+          const orphanEventIds: string[] = [];
           
-          for (const evDoc of eventsSnap.docs) {
+          eventsSnap.forEach((evDoc) => {
             const data = evDoc.data();
             const linkedMemoryId = data.memoryId;
             
-            if (linkedMemoryId) {
-              const memoryExists = memories.some(m => m.id === linkedMemoryId);
-              if (memoryExists) {
-                memoryIdsWithEvents.add(linkedMemoryId);
-              } else {
-                console.log("[Sync] Deleting orphaned event:", evDoc.id);
-                cleanupPromises.push(deleteDoc(doc(db, 'events', evDoc.id)));
+            if (linkedMemoryId && memories.some(m => m.id === linkedMemoryId)) {
+              if (!memoryIdToEvents[linkedMemoryId]) memoryIdToEvents[linkedMemoryId] = [];
+              memoryIdToEvents[linkedMemoryId].push(evDoc.id);
+            } else {
+              // Direct orphan: No linked memoryId OR memory doesn't exist anymore
+              orphanEventIds.push(evDoc.id);
+            }
+          });
+
+          // 1. Cleanup Orphans and Duduplicates
+          const cleanupOps = [];
+          
+          // Delete orphans
+          for (const id of orphanEventIds) {
+            console.log("[Sync] Deleting orphaned/invalid event:", id);
+            cleanupOps.push(deleteDoc(doc(db, 'events', id)));
+          }
+          
+          // Delete duplicates (keep only the first event for each memory)
+          Object.entries(memoryIdToEvents).forEach(([memId, eventIds]) => {
+            if (eventIds.length > 1) {
+              console.log(`[Sync] Found ${eventIds.length} events for memory ${memId}, cleaning up duplicates...`);
+              eventIds.slice(1).forEach(dupId => {
+                cleanupOps.push(deleteDoc(doc(db, 'events', dupId)));
+              });
+            }
+          });
+          
+          if (cleanupOps.length > 0) {
+            try {
+              await Promise.all(cleanupOps);
+            } catch (err) {
+              handleFirestoreError(err, OperationType.DELETE, 'events');
+            }
+          }
+
+          // 2. Create missing entries & Update dates
+          const updateOps = [];
+          for (const memory of memories) {
+            const existingEventIds = memoryIdToEvents[memory.id] || [];
+            
+            if (existingEventIds.length === 0) {
+              console.log("[Sync] Creating missing calendar entry for memory:", memory.id);
+              try {
+                const eventRef = await addDoc(collection(db, 'events'), {
+                  title: memory.title || 'Momen Berharga',
+                  genre: 'memory',
+                  date: memory.displayDate,
+                  time: '',
+                  note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`,
+                  authorId: memory.userId,
+                  createdAt: Timestamp.now(),
+                  memoryUrl: memory.url,
+                  memoryId: memory.id
+                });
+                updateOps.push(updateDoc(doc(db, 'memories', memory.id), {
+                  calendarEventId: eventRef.id
+                }));
+              } catch (err) {
+                handleFirestoreError(err, OperationType.WRITE, 'events/memories');
               }
             } else {
-              // Old memory event without memoryId link? Delete it to be safe, it'll be recreated if needed
-              cleanupPromises.push(deleteDoc(doc(db, 'events', evDoc.id)));
+              // Check if date or title needs sync
+              const eventDoc = eventsSnap.docs.find(d => d.id === existingEventIds[0]);
+              const eventData = eventDoc?.data();
+              if (eventData && (eventData.date !== memory.displayDate || eventData.title !== memory.title)) {
+                console.log("[Sync] Updating calendar date/title for memory:", memory.id);
+                updateOps.push(updateDoc(doc(db, 'events', existingEventIds[0]), {
+                  date: memory.displayDate,
+                  title: memory.title || 'Momen Berharga',
+                  note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`
+                }));
+              }
             }
           }
-
-          if (cleanupPromises.length > 0) await Promise.all(cleanupPromises);
-
-          // Check if any memory is missing a calendar entry
-          for (const memory of memories) {
-            if (!memoryIdsWithEvents.has(memory.id)) {
-              console.log("[Sync] Creating missing calendar entry for memory:", memory.id);
-              const eventRef = await addDoc(collection(db, 'events'), {
-                title: memory.title || 'Momen Berharga',
-                genre: 'memory',
-                date: memory.displayDate,
-                time: '',
-                note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`,
-                authorId: memory.userId,
-                createdAt: Timestamp.now(),
-                memoryUrl: memory.url,
-                memoryId: memory.id
-              });
-              await updateDoc(doc(db, 'memories', memory.id), {
-                calendarEventId: eventRef.id
-              });
+          
+          if (updateOps.length > 0) {
+            try {
+              await Promise.all(updateOps);
+            } catch (err) {
+              handleFirestoreError(err, OperationType.UPDATE, 'reconciliation');
             }
           }
+          console.log("[Sync] Reconciliation completed successfully");
         } catch (err) {
-          console.warn("[Sync] Reconciliation failed:", err);
+          console.error("[Sync] Reconciliation critical failure:", err);
         }
       };
       
-      // Delay slightly to ensure states are settled
-      const timer = setTimeout(syncInternal, 2000);
+      // Delay slightly to ensure states are settled and avoid race conditions
+      const timer = setTimeout(syncInternal, 3000);
       return () => clearTimeout(timer);
     }
   }, [loading, memories.length, user?.uid]);
@@ -549,8 +606,8 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       // We look for events by linked memoryId for maximum robustness
       try {
         const eventsRef = collection(db, 'events');
-        const q = query(eventsRef, where('memoryId', '==', memory.id));
-        const eventsSnap = await getDocs(q);
+        const qC = query(eventsRef, where('memoryId', '==', memory.id));
+        const eventsSnap = await getDocs(qC);
         
         const deleteOps = eventsSnap.docs.map(d => deleteDoc(doc(db, 'events', d.id)));
         

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Trash2, Calendar as CalendarIcon, Lock, Pencil, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, logPortalActivity } from '../lib/firebase';
+import { db, auth, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, where, Timestamp, updateDoc } from 'firebase/firestore';
 import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 
@@ -23,6 +23,7 @@ const GENRE_COLORS: Record<string, string> = {
   event: '#10b981',
   libur: '#ef4444',
   materi: '#8b5cf6',
+  memory: '#ec4899',
   lainnya: '#6b7280'
 };
 
@@ -42,33 +43,35 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
     const qEvents = collection(db, 'events');
     const unsubscribeEvents = onSnapshot(qEvents, (snapshot) => {
       const allEvents: Record<string, Event[]> = {};
-      snapshot.forEach((doc) => {
-        const data = doc.data() as Event;
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as Event;
         const date = data.date;
         if (!allEvents[date]) allEvents[date] = [];
-        allEvents[date].push({ ...data, id: doc.id });
+        allEvents[date].push({ ...data, id: docSnap.id });
       });
       setEvents(allEvents);
       if (allEvents) setLoading(false);
     }, (error) => {
       console.error("Kalender events listener error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'events');
     });
 
     // Listen to memories
     const qMemories = collection(db, 'memories');
     const unsubscribeMemories = onSnapshot(qMemories, (snapshot) => {
       const allMemories: Record<string, any[]> = {};
-      snapshot.forEach((doc) => {
-        const data = doc.data();
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         const date = data.displayDate; // Memory uses displayDate
         if (date) {
           if (!allMemories[date]) allMemories[date] = [];
-          allMemories[date].push({ ...data, id: doc.id });
+          allMemories[date].push({ ...data, id: docSnap.id });
         }
       });
       setMemories(allMemories);
     }, (error) => {
       console.error("Kalender memories listener error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'memories');
     });
 
     return () => {
@@ -107,7 +110,8 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
       }
       setForm({ title: '', genre: 'tugas', time: '', note: '' });
       setEditingId(null);
-    } catch (e) {
+    } catch (e: any) {
+      handleFirestoreError(e, editingId ? OperationType.UPDATE : OperationType.CREATE, `events/${editingId || ''}`);
       console.error(e);
     }
   };

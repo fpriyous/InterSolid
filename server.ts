@@ -192,14 +192,24 @@ async function startServer() {
   // Handle upgrade to WebSocket
   server.on('upgrade', (request, socket, head) => {
     try {
-      const url = new URL(request.url || '', 'http://localhost');
-      if (url.pathname?.startsWith('/collaboration')) {
+      const url = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`);
+      const pathname = url.pathname;
+      
+      console.log(`[Collaboration] Handshake: ${pathname} (Host: ${request.headers.host})`);
+      
+      if (pathname === '/collaboration' || pathname.startsWith('/collaboration/')) {
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
         });
+      } else if (pathname.startsWith('/@vite') || pathname.includes('vite')) {
+        // Let Vite handle its own upgrades (HMR) if they ever occur
+        console.log(`[Vite] HMR Upgrade bypassed: ${pathname}`);
+      } else {
+        console.warn(`[Collaboration] Rejected Upgrade: ${pathname}`);
+        socket.destroy();
       }
     } catch (err) {
-      console.error('[Collaboration] Upgrade error:', err);
+      console.error('[Collaboration] Upgrade Error:', err);
       socket.destroy();
     }
   });

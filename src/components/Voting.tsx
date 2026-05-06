@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Vote, Trash2, Plus, CheckCircle2, Lock, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, increment, query, orderBy, Timestamp, getDocs, writeBatch } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
@@ -35,16 +35,24 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
   useEffect(() => {
     const q = query(collection(db, 'polls'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const pollData: Poll[] = [];
-      for (const pollDoc of snapshot.docs) {
-        const p = { ...pollDoc.data() as any, id: pollDoc.id };
-        const optSnapshot = await getDocs(collection(db, 'polls', pollDoc.id, 'options'));
-        const options: any[] = [];
-        optSnapshot.forEach(o => options.push({ ...o.data() as any, id: o.id }));
-        p.options = options.sort((a, b) => (a.order || 0) - (b.order || 0));
-        pollData.push(p);
+      try {
+        const pollData: Poll[] = [];
+        for (const pollDoc of snapshot.docs) {
+          const p = { ...pollDoc.data() as any, id: pollDoc.id };
+          const optSnapshot = await getDocs(collection(db, 'polls', pollDoc.id, 'options'));
+          const options: any[] = [];
+          optSnapshot.forEach(o => options.push({ ...o.data() as any, id: o.id }));
+          p.options = options.sort((a, b) => (a.order || 0) - (b.order || 0));
+          pollData.push(p);
+        }
+        setPolls(pollData);
+        setLoading(false);
+      } catch (err: any) {
+        handleFirestoreError(err, OperationType.GET, 'polls or subcollections');
+        setLoading(false);
       }
-      setPolls(pollData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'polls');
       setLoading(false);
     });
     return () => unsubscribe();
@@ -85,8 +93,9 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       await batch.commit();
 
       setNewPoll({ question: '', options: ['', ''] });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      handleFirestoreError(e, OperationType.CREATE, 'polls');
     }
   };
 
@@ -104,7 +113,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       setHasVoted({ ...hasVoted, [pollId]: true });
     } catch (e: any) {
       console.error("Vote error:", e);
-      alert("Gagal memilih: " + e.message);
+      handleFirestoreError(e, OperationType.UPDATE, `polls/${pollId}/options/${optionId}`);
     }
   };
 
@@ -129,7 +138,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
       setConfirmId(null);
     } catch (e: any) {
       console.error("Delete poll error:", e);
-      alert('Gagal menghapus polling: ' + (e.message || "Izin ditolak oleh server"));
+      handleFirestoreError(e, OperationType.DELETE, `polls/${id}`);
       setConfirmId(null);
     } finally {
       setLoading(false);

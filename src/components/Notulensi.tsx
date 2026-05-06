@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
 import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock, History, RotateCcw } from 'lucide-react';
-import { db, storage, logPortalActivity } from '../lib/firebase';
+import { db, storage, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, setDoc, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { User } from 'firebase/auth';
@@ -301,20 +301,31 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   // Handle Yjs and Websocket initialization
   useEffect(() => {
-    if (!editingId || !isAdding || !user) return;
+    if (!editingId || !isAdding || !user) {
+      setYDoc(null);
+      setProvider(null);
+      setIsConnected(false);
+      return;
+    }
 
+    console.log(`[Collaboration] Initializing session for: ${editingId}`);
     const doc = new Y.Doc();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/collaboration/${editingId}`;
+    // We use a base path. y-websocket will automatically append /roomName
+    const wsUrl = `${protocol}//${host}/collaboration`;
     
-    console.log(`[Collaboration] Handshaking: ${wsUrl}`);
-    const wsProvider = new WebsocketProvider(wsUrl, editingId, doc);
-    
-    wsProvider.on('status', (event: any) => {
-      console.log(`[Collaboration] Websocket status: ${event.status}`);
-      setIsConnected(event.status === 'connected');
+    const wsProvider = new WebsocketProvider(wsUrl, editingId, doc, {
+      connect: true,
+      params: { auth: 'true' }
     });
+    
+    const statusHandler = (event: any) => {
+      console.log(`[Collaboration] Status (${editingId}): ${event.status}`);
+      setIsConnected(event.status === 'connected');
+    };
+
+    wsProvider.on('status', statusHandler);
 
     // Set local awareness for cursors
     const color = user.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16);
@@ -382,7 +393,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         style: 'pointer-events: auto !important;'
       },
     },
-  }, [yDoc, editingId]); // Re-init when yDoc changes
+  }, [yDoc, provider, editingId, user?.uid, isAdmin]); // Re-init when yDoc or context changes
 
   const [isSaving, setIsSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -436,33 +447,39 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   // Auto-save result to Firestore (for persistence)
   useEffect(() => {
-    if (!editor || !isAdding || !editingId || !isConnected || !provider) return;
+    if (!editor || !isAdding || !editingId || !provider) return;
 
     let timeout: any;
     let typingTimeout: any;
 
     const handleUpdate = () => {
-      // Set typing to true
-      provider.awareness.setLocalStateField('user', {
-        ...provider.awareness.getLocalState()?.user,
-        isTyping: true
-      });
-
-      // Clear typing after 2 seconds of inactivity
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
+      // Manage typing awareness if connected
+      if (isConnected) {
         provider.awareness.setLocalStateField('user', {
           ...provider.awareness.getLocalState()?.user,
-          isTyping: false
+          isTyping: true
         });
-      }, 2000);
+
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+          provider.awareness.setLocalStateField('user', {
+            ...provider.awareness.getLocalState()?.user,
+            isTyping: false
+          });
+        }, 2000);
+      }
 
       setSaveStatus('saving');
       clearTimeout(timeout);
       timeout = setTimeout(async () => {
         const html = editor.getHTML();
         const text = editor.getText();
+        
         try {
+          // Robust path for logging
+          const path = `notes/${editingId}`;
+          console.log(`[AutoSave] Saving to Firestore: ${path}`);
+          
           await updateDoc(doc(db, 'notes', editingId), {
             content: text.substring(0, 200),
             htmlContent: html,
@@ -470,16 +487,14 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
             updatedBy: user?.uid
           });
           
-          // Also try to save a history snapshot if significant time passed
           saveHistorySnapshot();
-
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 3000);
         } catch (e) {
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
         }
-      }, 5000); // 5s debounce for persistent storage, Yjs handles the real-time sync
+      }, 5000); 
     };
 
     editor.on('update', handleUpdate);
@@ -500,8 +515,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     const q = query(collection(db, 'notes'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: Note[] = [];
-      snapshot.forEach((doc) => {
-        data.push({ ...doc.data() as any, id: doc.id });
+      snapshot.forEach((docSnapshot) => {
+        data.push({ ...docSnapshot.data() as any, id: docSnapshot.id });
       });
       setNotes(data);
       
@@ -547,6 +562,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         updatedAt: Timestamp.now()
       });
     } catch (e: any) {
+      handleFirestoreError(e, OperationType.UPDATE, `notes/${id}`);
       alert('Gagal mengubah status kunci: ' + e.message);
     }
   };
@@ -576,6 +592,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       logPortalActivity('note_create', 'Membuat catatan baru', user);
     } catch (e: any) {
       console.error(e);
+      handleFirestoreError(e, OperationType.CREATE, 'notes');
       alert('Gagal memulai catatan baru: ' + e.message);
     } finally {
       setLoading(false);
@@ -611,6 +628,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setConfirmId(null);
     } catch (e: any) {
       console.error("Delete note error detail:", e);
+      handleFirestoreError(e, OperationType.DELETE, `notes/${id}`);
       alert('Gagal menghapus catatan: ' + (e.message || "Izin ditolak oleh server (Permission Denied)"));
       setConfirmId(null);
     }
@@ -662,7 +680,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               key={n.id}
               onClick={() => {
                 setSelectedNote(n);
-                setIsAdding(false);
+                setEditingId(n.id);
+                setIsAdding(true);
               }}
               className={`p-5 rounded-[24px] border transition-all duration-300 transform cursor-pointer group ${
                 selectedNote?.id === n.id 
@@ -858,22 +877,22 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       ) : historyDocs.length === 0 ? (
                         <div className="text-center py-12 opacity-30 italic text-[10px]">Belum ada riwayat tercatat.</div>
                       ) : (
-                        historyDocs.map((doc, idx) => (
-                          <div key={doc.id} className="group relative">
+                        historyDocs.map((hDoc, idx) => (
+                          <div key={hDoc.id} className="group relative">
                             <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-amber-500/20 group-hover:bg-amber-500 transition-all rounded-full" />
                             <div className="pl-4">
                               <p className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mb-1">
-                                {doc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                {hDoc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                               </p>
                               <div className="flex items-center gap-2 mb-2">
                                 <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] font-black text-white shrink-0">
-                                  {doc.editorName?.[0]?.toUpperCase()}
+                                  {hDoc.editorName?.[0]?.toUpperCase()}
                                 </div>
-                                <span className="text-[10px] font-bold truncate">{doc.editorName}</span>
+                                <span className="text-[10px] font-bold truncate">{hDoc.editorName}</span>
                               </div>
                               <button 
                                 type="button"
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   
@@ -882,44 +901,67 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                                     return;
                                   }
 
-                                  const confirmed = window.confirm("Pulihkan ke versi ini? Konten saat ini di editor akan ditimpa untuk SEMUA pengguna.");
+                                  const confirmed = window.confirm("Pulihkan ke versi ini? Konten di editor akan ditimpa secara permanen untuk SEMUA pengguna.");
                                   if (!confirmed) return;
 
-                                  try {
-                                    if (editor && yDoc) {
-                                      // Log for debugging
-                                      console.log("[History] Starting restoration transaction for:", doc.id);
-                                      
-                                      // @ts-ignore - access Yjs fragment directly for absolute sync
-                                      const xmlFragment = yDoc.getXmlFragment('default');
-                                      
-                                      // Force a direct Yjs transaction to overwrite the document
-                                      // This ensures the update is broadcasted to all connected clients correctly
-                                      yDoc.transact(() => {
-                                        // 1. Wipe the shared fragment completely
-                                        xmlFragment.delete(0, xmlFragment.length);
-                                        
-                                        // 2. Re-populate with the snapshot content
-                                        // Tiptap Collaboration will sync this repopulation
-                                        editor.commands.setContent(doc.htmlContent, true);
-                                      });
-                                      
-                                      setShowHistory(false);
-                                      setSaveStatus('saving');
-                                      
-                                      if (user) {
-                                        logPortalActivity('note_history_restore', `Memulihkan riwayat catatan [${editingId}]`, user);
+                                   try {
+                                    setSaveStatus('saving');
+                                    console.log("[History] Restoring content for note:", editingId);
+                                    
+                                    // 1. Force update the local editor
+                                    if (editor) {
+                                      // If yDoc/Collaboration is active, try to use a transaction for clean sync
+                                      if (yDoc) {
+                                        try {
+                                          // @ts-ignore
+                                          const xmlFragment = yDoc.getXmlFragment('default');
+                                          yDoc.transact(() => {
+                                            xmlFragment.delete(0, xmlFragment.length);
+                                            editor.commands.setContent(hDoc.htmlContent, true);
+                                          });
+                                          console.log("[History] Yjs transaction completed");
+                                        } catch (yErr) {
+                                          console.warn("[History] Yjs transaction failed, falling back to direct setContent:", yErr);
+                                          editor.commands.setContent(hDoc.htmlContent, true);
+                                        }
+                                      } else {
+                                        editor.commands.setContent(hDoc.htmlContent, true);
                                       }
-                                      
-                                      console.log("[History] Restore success via Yjs transaction");
-                                    } else {
-                                      // Minimal fallback
-                                      editor?.commands.setContent(doc.htmlContent, true);
-                                      setShowHistory(false);
                                     }
+
+                                    // 2. CRITICAL: Update Firestore directly for persistence (and to trigger onSnapshot for others)
+                                    if (editingId) {
+                                      const path = `notes/${editingId}`;
+                                      try {
+                                        await updateDoc(doc(db, 'notes', editingId), {
+                                          htmlContent: hDoc.htmlContent,
+                                          content: editor?.getText().substring(0, 200) || '',
+                                          updatedAt: Timestamp.now(),
+                                          updatedBy: user?.uid + " (Restored)"
+                                        });
+                                      } catch (err) {
+                                        handleFirestoreError(err, OperationType.UPDATE, path);
+                                      }
+                                    }
+                                    
+                                    setShowHistory(false);
+                                    setSaveStatus('saved');
+                                    
+                                    if (user) {
+                                      logPortalActivity('note_history_restore', `Memulihkan riwayat catatan [${editingId}]`, user);
+                                    }
+                                    
+                                    alert("Catatan berhasil dipulihkan!");
+                                    console.log("[History] Restore success: Editor + Firestore synced");
                                   } catch (err) {
                                     console.error("[History] Restoration Critical Error:", err);
-                                    alert("Gagal memulihkan catatan. Silakan hubungi admin.");
+                                    if (err instanceof Error && err.message.startsWith('{')) {
+                                      // It's our JSON error info
+                                      const info = JSON.parse(err.message);
+                                      alert(`Izin Gagal: Anda tidak memiliki akses untuk memulihkan catatan ini (${info.operationType}).`);
+                                    } else {
+                                      alert("Gagal memulihkan catatan secara penuh. Periksa koneksi internet Anda.");
+                                    }
                                   }
                                 }}
                                 className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"

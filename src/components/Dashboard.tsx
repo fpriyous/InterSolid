@@ -102,14 +102,24 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         const counts: Record<string, number> = {};
         
         // Fetch current week for all relevant collections simultaneously
-        const snapshots = await Promise.all(collectionsToTrack.map(coll => 
-          getDocs(query(collection(db, coll), 
-            where('createdAt', '>=', startOfWeek), 
-            where('createdAt', '<=', endOfWeek)
-          ))
-        ));
+        // Wrapped in individual try-catch to prevent one blocked collection from failing the whole chart
+        const snapshotPromises = collectionsToTrack.map(async (coll) => {
+          try {
+            return await getDocs(query(collection(db, coll), 
+              where('createdAt', '>=', startOfWeek), 
+              where('createdAt', '<=', endOfWeek)
+            ));
+          } catch (e) {
+            console.warn(`Aggregation skipped for ${coll} due to permissions or missing data`);
+            return null;
+          }
+        });
+
+        const snapshots = await Promise.all(snapshotPromises);
 
         snapshots.forEach((snapshot, index) => {
+          if (!snapshot) return;
+
           snapshot.forEach(doc => {
             const data = doc.data();
             let date: Date | null = null;
