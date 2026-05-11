@@ -358,7 +358,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     // Heartbeat: Tell others we are viewing
     const presenceDoc = doc(db, 'note_presence', `${editingId}_${user.uid}`);
     
-    const updatePresence = async (isTyping = false) => {
+    const updatePresence = async (isTyping = false, cursorIndex = 0) => {
       try {
         await setDoc(presenceDoc, {
           uid: user.uid,
@@ -367,15 +367,19 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           photo: user.photoURL,
           color: userColor,
           lastSeen: serverTimestamp(),
-          isTyping
+          isTyping,
+          cursorIndex
         }, { merge: true });
       } catch (e) {
         // Silently fail heartbeats
       }
     };
 
-    const heartbeat = setInterval(() => updatePresence(!!typingTimeout.current), 5000);
-    updatePresence(false);
+    const heartbeat = setInterval(() => {
+      const pos = editor?.state.selection.from || 0;
+      updatePresence(!!typingTimeout.current, pos);
+    }, 2500); // More frequent heartbeats
+    updatePresence(false, 0);
 
     // Listen to others in this specific note
     const q = query(
@@ -395,7 +399,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
              color: data.color,
              isTyping: data.isTyping,
              photo: data.photo,
-             uid: data.uid
+             uid: data.uid,
+             cursorIndex: data.cursorIndex || 0
            });
         }
       });
@@ -737,34 +742,36 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     const handleUpdate = () => {
       if (!editor || editor.isDestroyed || !editor.extensionManager) return;
       
-      // Manage typing awareness if connected
+      // Manage typing awareness (Works for both WebSocket and Polling Presence)
+      if (typingTimeout.current) clearTimeout(typingTimeout.current);
+      
       if (isConnected && provider) {
         try {
           provider.awareness.setLocalStateField('user', {
             ...provider.awareness.getLocalState()?.user,
             isTyping: true
           });
-
-          if (typingTimeout.current) clearTimeout(typingTimeout.current);
-          typingTimeout.current = setTimeout(() => {
-            if (provider && provider.awareness && !editor.isDestroyed) {
-              try {
-                provider.awareness.setLocalStateField('user', {
-                  ...provider.awareness.getLocalState()?.user,
-                  isTyping: false
-                });
-              } catch (e) {
-                // Ignore awareness cleanup errors on disconnect
-              }
-            }
-          }, 2000);
-        } catch (e) {
-          // Ignore awareness errors
-        }
+        } catch (e) {}
       }
+
+      typingTimeout.current = setTimeout(() => {
+        if (isConnected && provider && provider.awareness && !editor.isDestroyed) {
+          try {
+            provider.awareness.setLocalStateField('user', {
+              ...provider.awareness.getLocalState()?.user,
+              isTyping: false
+            });
+          } catch (e) {}
+        }
+        typingTimeout.current = undefined;
+      }, 2000);
 
       setSaveStatus('saving');
       if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
+      
+      // Much faster sync in polling mode to feel "live" (1.2s vs 3s)
+      const debounceTime = pollSyncActive && !isConnected ? 1200 : 3000;
+      
       autoSaveTimeout.current = setTimeout(async () => {
         if (!editor || editor.isDestroyed || !editor.extensionManager) {
           setSaveStatus('idle');
@@ -792,7 +799,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
         }
-      }, 3000); // Shorter debounce for polling mode
+      }, debounceTime); 
     };
 
     if (editor && !editor.isDestroyed) {
@@ -1415,6 +1422,53 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                          <div className="h-px w-8 bg-gray-300" />
                       </div>
                     </div>
+
+                    {/* Manual Collaboration Cursors for Polling Mode */}
+                    {pollSyncActive && !isConnected && editor && (
+                      <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
+                        {activeUsers.filter(u => u.cursorIndex !== undefined).map((u) => {
+                          try {
+                            const pos = Math.min(u.cursorIndex, editor.state.doc.content.size);
+                            const coords = editor.view.coordsAtPos(pos);
+                            const editorBounds = editor.view.dom.getBoundingClientRect();
+                            const containerBounds = document.querySelector('.editor-content-container')?.getBoundingClientRect();
+                            
+                            if (!coords || !containerBounds) return null;
+
+                            // Calculate relative position within the editor container
+                            const left = coords.left - editorBounds.left + 64; // Adjust for md:p-20 padding (roughly)
+                            const top = coords.top - editorBounds.top + 80;
+
+                            return (
+                              <motion.div 
+                                key={`cursor-${u.clientId}`}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1, left, top }}
+                                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                className="absolute pointer-events-none"
+                              >
+                                <div className="relative">
+                                  {/* Caret */}
+                                  <div 
+                                    className="w-[2px] h-5 transition-colors"
+                                    style={{ backgroundColor: u.color }}
+                                  />
+                                  {/* Label */}
+                                  <div 
+                                    className="absolute -top-5 left-0 px-1.5 py-0.5 rounded-sm text-[9px] font-black text-white whitespace-nowrap uppercase tracking-tighter"
+                                    style={{ backgroundColor: u.color }}
+                                  >
+                                    {u.name}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          } catch (e) {
+                            return null;
+                          }
+                        })}
+                      </div>
+                    )}
 
                     {/* Collaborative Typing Indicator Pill */}
                     <AnimatePresence>
