@@ -351,6 +351,20 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   const isConnectedRef = useRef(false);
 
+  // Add beforeunload listener to prevent loss during sudden refresh
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveStatus === 'saving') {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [saveStatus]);
+
   // Cloud Awareness (Presence tracking for Polling Mode)
   useEffect(() => {
     if (!editingId || !user || !isAdding) return;
@@ -384,15 +398,19 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     // Listen to others in this specific note
     const q = query(
       collection(db, 'note_presence'), 
-      where('noteId', '==', editingId),
-      where('lastSeen', '>', new Date(Date.now() - 60000)) // Active in last 1min
+      where('noteId', '==', editingId)
     );
     
     const unsubscribe = onSnapshot(q, (snap) => {
       const users: any[] = [];
+      const now = Date.now();
+      
       snap.forEach(d => {
         const data = d.data();
-        if (data.uid !== user.uid) {
+        const lastSeen = data.lastSeen?.toMillis() || 0;
+        
+        // Only include users seen in the last 20 seconds
+        if (data.uid !== user.uid && (now - lastSeen < 20000)) {
            users.push({
              clientId: d.id,
              name: data.name,
@@ -410,6 +428,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       if (!isConnectedRef.current) {
         setActiveUsers(users);
       }
+    }, (error) => {
+      console.warn('[Presence] Snapshot error:', error);
     });
 
     return () => {
@@ -447,13 +467,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     setConnStatus('connecting');
     setPollSyncActive(false);
     
-    // Fallback detection: if not connected in 7s, switch to Firestore sync (polling mode)
+    // Fallback detection: if not connected in 3.5s, switch to Firestore sync (polling mode)
     const fallbackTimeout = setTimeout(() => {
       if (!isConnectedRef.current) {
         console.warn('[Collaboration] WebSocket connection taking too long. Activating Firestore Polling Sync...');
         setPollSyncActive(true);
       }
-    }, 7000);
+    }, 3500); // Shortened from 7s
     
     // Create Yjs Doc
     const doc = new Y.Doc();
@@ -634,13 +654,20 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     if (!yDoc || !provider || !editor || editor.isDestroyed || !editingId || !isAdding) return;
 
     const seedIfEmpty = () => {
+      if (!yDoc || !editor || editor.isDestroyed || !editingId) return;
+      
       const xmlFragment = yDoc.getXmlFragment('default');
       // If Yjs is completely empty (no children in the fragment)
       if (xmlFragment.length === 0) {
-        const existingNote = notes.find(n => n.id === editingId);
+        // Find the note - try state first, then fallback to current selectedNote
+        const existingNote = notes.find(n => n.id === editingId) || selectedNote;
+        
         if (existingNote?.htmlContent && existingNote.htmlContent !== '<p></p>') {
           console.log('[Collaboration] Yjs is empty, seeding from Firestore htmlContent');
-          editor.commands.setContent(existingNote.htmlContent, true);
+          // Important: use a transaction
+          yDoc.transact(() => {
+             editor.commands.setContent(existingNote.htmlContent, true);
+          });
         }
       }
     };
@@ -954,8 +981,12 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
         setLastSavedAt(new Date());
 
-        // Cleanup: if both title is placeholder/empty and content is empty, delete it
-        if ((title === 'Tanpa Judul' || title === 'Catatan Baru') && (text === '' || html === '<p></p>')) {
+        // Improved Cleanup: Only delete if it's literally untouched and just created
+        // We check if the doc was created in the last 60 seconds to avoid deleting long-standing placeholder notes
+        const currentNote = notes.find(n => n.id === editingId);
+        const isVeryNew = currentNote?.createdAt && (Date.now() - currentNote.createdAt.toMillis() < 60000);
+        
+        if (isVeryNew && (title === 'Tanpa Judul' || title === 'Catatan Baru') && (text === '' || html === '<p></p>')) {
           console.log('[Cleanup] Deleting empty placeholder note');
           await deleteDoc(doc(db, 'notes', editingId));
         } else {
@@ -1034,6 +1065,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               onClick={() => {
                 setSelectedNote(n);
                 setEditingId(n.id);
+                setNewNote({ title: n.title, tag: n.tag });
                 setIsAdding(true);
               }}
               className={`p-5 rounded-[24px] border transition-all duration-300 transform cursor-pointer group ${
@@ -1128,7 +1160,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       <motion.div 
                         initial={{ scale: 0, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
-                        key={u.clientId + i} 
+                        key={`presence-header-${u.uid || u.clientId}-${i}`} 
                         className="relative group/avatar"
                       >
                         <div 
@@ -1394,7 +1426,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
                 <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1 pb-32">
                   {/* Document Page Simulation - Modern Minimalist */}
-                  <div className="max-w-[850px] mx-auto my-6 md:my-12 bg-white dark:bg-[#0f172a] shadow-[0_2px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-xl min-h-[1056px] relative p-10 md:p-20 border border-gray-200/40 dark:border-blue-900/10 transition-all duration-500 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:border-blue-700/20">
+                  <div className="page-simulation-container max-w-[850px] mx-auto my-6 md:my-12 bg-white dark:bg-[#0f172a] shadow-[0_2px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-xl min-h-[1056px] relative p-10 md:p-20 border border-gray-200/40 dark:border-blue-900/10 transition-all duration-500 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:border-blue-700/20">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
                       <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-headings:tracking-tight prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-p:leading-relaxed selection:bg-blue-100 dark:selection:bg-blue-900/40">
                         <EditorContent editor={editor} />
@@ -1446,14 +1478,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                           try {
                             const pos = Math.min(u.cursorIndex, editor.state.doc.content.size);
                             const coords = editor.view.coordsAtPos(pos);
-                            const editorBounds = editor.view.dom.getBoundingClientRect();
+                            const containerBounds = document.querySelector('.page-simulation-container')?.getBoundingClientRect();
                             
-                            if (!coords) return null;
+                            if (!coords || !containerBounds) return null;
 
                             // Calculate relative position within the editor container
-                            // We use viewport-relative calculation to be precise
-                            const left = coords.left - editorBounds.left;
-                            const top = coords.top - editorBounds.top;
+                            const left = coords.left - containerBounds.left;
+                            const top = coords.top - containerBounds.top;
 
                             return (
                               <motion.div 
