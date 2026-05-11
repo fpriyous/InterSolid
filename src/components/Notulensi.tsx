@@ -311,6 +311,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
   const [connStatus, setConnStatus] = useState<string>('connecting');
+  const [pollSyncActive, setPollSyncActive] = useState(false);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -369,6 +370,15 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
     console.log(`[Collaboration] Initializing session for: ${editingId}`);
     setConnStatus('connecting');
+    setPollSyncActive(false);
+    
+    // Fallback detection: if not connected in 10s, switch to Firestore sync (polling mode)
+    const fallbackTimeout = setTimeout(() => {
+      if (!isConnected) {
+        console.warn('[Collaboration] WebSocket connection taking too long. Activating Firestore Polling Sync...');
+        setPollSyncActive(true);
+      }
+    }, 10000);
     
     // Create Yjs Doc
     const doc = new Y.Doc();
@@ -376,15 +386,15 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     // Determine the WS URL dynamically
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // The server handles /collaboration and /collaboration/*
     const wsUrl = `${protocol}//${host}/collaboration`;
     
-    console.log(`[Collaboration] Connecting to: ${wsUrl}/${editingId}`);
+    console.log(`[Collaboration] Attempting connection to: ${wsUrl}/${editingId}`);
     
     // Create side-effect provider
     const wsProvider = new WebsocketProvider(wsUrl, editingId, doc, {
       connect: true,
-      params: { u: user.uid, t: Date.now().toString() } 
+      params: { u: user.uid, v: '2' },
+      disableBc: true
     });
     
     const statusHandler = (event: any) => {
@@ -448,6 +458,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
     return () => {
       console.log(`[Collaboration] Disconnecting session for: ${editingId}`);
+      clearTimeout(fallbackTimeout);
       wsProvider.off('status', statusHandler);
       wsProvider.awareness.off('change', handleAwarenessChange);
       wsProvider.disconnect();
@@ -505,6 +516,32 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       // Logic for save is handled in the separate useEffect
     }
   }, [extensions, editingId]); 
+
+  // Polling Fallback Logic: Listen to Firestore if WebSocket fails
+  useEffect(() => {
+    if (!pollSyncActive || !editingId || !editor || editor.isDestroyed || isConnected) return;
+
+    console.log(`[Collaboration] Running in Polling Sync Mode for: ${editingId}`);
+    
+    const unsubscribe = onSnapshot(doc(db, 'notes', editingId), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      
+      // Only apply remote content if:
+      // 1. We aren't typing locally (wait 2s after last key)
+      // 2. The author of the change isn't us (or it was restored)
+      // 3. User is NOT actively editing (no typingTimeout)
+      const remoteHtml = data.htmlContent || '';
+      const localHtml = editor.getHTML();
+      
+      if (!typingTimeout.current && remoteHtml !== localHtml && data.updatedBy !== user?.uid) {
+        console.log('[Collaboration] Applying Firestore content update (Polling Mode)');
+        editor.commands.setContent(remoteHtml, false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [pollSyncActive, editingId, editor, isConnected, user?.uid]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -912,11 +949,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                             provider.connect();
                         }
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : connStatus === 'connecting' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'} border rounded-full transition-all cursor-pointer hover:shadow-md active:scale-95`}
+                    className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : pollSyncActive ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : connStatus === 'connecting' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'} border rounded-full transition-all cursor-pointer hover:shadow-md active:scale-95`}
                   >
-                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : connStatus === 'connecting' ? 'bg-amber-500 animate-bounce' : 'bg-red-400'}`} />
-                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : connStatus === 'connecting' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'} tracking-tighter`}>
-                      {isConnected ? (connStatus === 'synced' ? 'SINKRONASI AKTIF' : 'MENYINKRONKAN...') : connStatus === 'connecting' ? 'MENYAMBUNGKAN...' : 'Gagal Konek (Klik Reconnect)'}
+                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : pollSyncActive ? 'bg-amber-400 animate-pulse' : connStatus === 'connecting' ? 'bg-amber-500 animate-bounce' : 'bg-red-400'}`} />
+                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : pollSyncActive ? 'text-amber-600 dark:text-amber-400' : connStatus === 'connecting' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'} tracking-tighter`}>
+                      {isConnected ? (connStatus === 'synced' ? 'SINKRONASI AKTIF' : 'MENYINKRONKAN...') : pollSyncActive ? 'MODE POLLING AKTIF' : connStatus === 'connecting' ? 'MENYAMBUNGKAN...' : 'Gagal Konek (Klik Reconnect)'}
                     </span>
                   </div>
 

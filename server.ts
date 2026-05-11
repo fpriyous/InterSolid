@@ -58,6 +58,49 @@ async function startServer() {
   const server = createServer(app);
   const PORT = 3000;
 
+  // Set up WebSocket server for Y.js collaboration
+  const wss = new WebSocketServer({ 
+    noServer: true,
+    perMessageDeflate: false // Disable compression to avoid issues with some proxies
+  });
+
+  wss.on('connection', (ws, req) => {
+    try {
+      const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      const parts = url.pathname.split('/').filter(Boolean);
+      const roomName = parts.length > 1 ? parts[parts.length - 1] : 'default';
+      
+      console.log(`[Collaboration] 🟢 New client connected to room: "${roomName}" from: ${req.url}`);
+      
+      setupWSConnection(ws, req, { docName: roomName, gc: true });
+      
+      ws.on('error', (err) => {
+        console.error(`[Collaboration] ❌ WS Error (Room: ${roomName}):`, err);
+      });
+      
+    } catch (err) {
+      console.error('[Collaboration] ❌ Connection Setup Failed:', err);
+      ws.close(1011, 'Internal Server Error');
+    }
+  });
+
+  server.on('upgrade', (request, socket, head) => {
+    try {
+      const url = request.url || '';
+      const pathname = url.split('?')[0];
+      
+      if (pathname.includes('/collaboration')) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      }
+      // Note: We don't interfere with other upgrades (Vite handle them if it has the server)
+    } catch (err) {
+      console.error('[WS Upgrade Error]:', err);
+      if (socket.writable) socket.destroy();
+    }
+  });
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
@@ -166,50 +209,6 @@ async function startServer() {
   app.use('/api/*', (req, res) => {
     console.warn(`[API 404] ${req.method} ${req.originalUrl}`);
     res.status(404).json({ error: `Not Found: ${req.originalUrl}`, status: 'error' });
-  });
-
-  // Set up WebSocket server for Y.js collaboration
-  const wss = new WebSocketServer({ noServer: true });
-
-  wss.on('connection', (ws, req) => {
-    const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-    const parts = url.pathname.split('/').filter(Boolean);
-    const roomName = parts.length > 0 ? parts[parts.length - 1] : 'default';
-    
-    console.log(`[Collaboration] 🟢 New client connected to room: "${roomName}" from URL: "${req.url}" (Total clients: ${wss.clients.size})`);
-    
-    ws.on('close', (code, reason) => {
-      console.log(`[Collaboration] 🔴 Client disconnected from room: "${roomName}" (Code: ${code}, Reason: ${reason}) (Remaining: ${wss.clients.size})`);
-    });
-
-    ws.on('error', (err) => {
-      console.error(`[Collaboration] ❌ WebSocket error for room "${roomName}":`, err);
-    });
-
-    try {
-      setupWSConnection(ws, req, { docName: roomName, gc: true });
-      console.log(`[Collaboration] ✅ setupWSConnection initialized for room: "${roomName}"`);
-    } catch (err) {
-      console.error(`[Collaboration] ❌ setupWSConnection failed for room: "${roomName}":`, err);
-    }
-  });
-
-  server.on('upgrade', (request, socket, head) => {
-    try {
-      const pathname = request.url || '';
-      
-      if (pathname.includes('/collaboration')) {
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit('connection', ws, request);
-        });
-      } else {
-        // If it's not collaboration, let it pass (could be Vite HMR)
-        // We don't destroy it here to avoid blocking Vite
-      }
-    } catch (err) {
-      console.error('[WS Upgrade Error]:', err);
-      if (socket.writable) socket.destroy();
-    }
   });
 
   // Vite integration
