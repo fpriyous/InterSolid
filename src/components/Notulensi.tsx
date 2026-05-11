@@ -348,6 +348,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   };
 
+  const isConnectedRef = useRef(false);
+
   // Handle Yjs and Websocket initialization
   useEffect(() => {
     // We only need collaboration when editing an active note
@@ -364,6 +366,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setYDoc(null);
       setProvider(null);
       setIsConnected(false);
+      isConnectedRef.current = false;
       setConnStatus('idle');
       return;
     }
@@ -372,13 +375,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     setConnStatus('connecting');
     setPollSyncActive(false);
     
-    // Fallback detection: if not connected in 10s, switch to Firestore sync (polling mode)
+    // Fallback detection: if not connected in 7s, switch to Firestore sync (polling mode)
     const fallbackTimeout = setTimeout(() => {
-      if (!isConnected) {
+      if (!isConnectedRef.current) {
         console.warn('[Collaboration] WebSocket connection taking too long. Activating Firestore Polling Sync...');
         setPollSyncActive(true);
       }
-    }, 10000);
+    }, 7000);
     
     // Create Yjs Doc
     const doc = new Y.Doc();
@@ -400,13 +403,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     const statusHandler = (event: any) => {
       console.log(`[Collaboration] Status (${editingId}): ${event.status}`);
       setConnStatus(event.status);
-      setIsConnected(event.status === 'connected');
+      const connected = event.status === 'connected';
+      setIsConnected(connected);
+      isConnectedRef.current = connected;
       
-      if (event.status === 'connected') {
+      if (connected) {
         connRetryCount.current = 0;
-      } else if (event.status === 'disconnected') {
-        // Auto reconnect logic is built into y-websocket, but we can nudge it
-        console.log('[Collaboration] Connection lost, will attempt automatic reconnect...');
+        setPollSyncActive(false); // Stop polling if WS connects
       }
     };
 
@@ -595,9 +598,9 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   };
 
-  // Auto-save result to Firestore (for persistence)
+  // Auto-save result to Firestore (for persistence and polling sync)
   useEffect(() => {
-    if (!editor || !isAdding || !editingId || !provider) return;
+    if (!editor || !isAdding || !editingId) return;
 
     const handleUpdate = () => {
       if (!editor || editor.isDestroyed || !editor.extensionManager) return;
@@ -656,7 +659,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
         }
-      }, 5000); 
+      }, 3000); // Shorter debounce for polling mode
     };
 
     if (editor && !editor.isDestroyed) {
