@@ -456,6 +456,22 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
     wsProvider.awareness.on('change', handleAwarenessChange);
 
+    // Initial seeding from Firestore if YDoc is empty after sync
+    const handleInitialSync = (isSynced: boolean) => {
+      if (isSynced && doc && editingId) {
+        const xmlFragment = doc.getXmlFragment('default');
+        if (xmlFragment.length === 0) {
+          const existingNote = notes.find(n => n.id === editingId);
+          if (existingNote?.htmlContent) {
+            console.log('[Collaboration] Seeding Yjs from Firestore content');
+            // We use a temporary tiptap editor if needed or directly manipulate Yjs
+            // But since we have the editor instance usually, we can delegate it there
+          }
+        }
+      }
+    };
+    wsProvider.on('sync', handleInitialSync);
+
     setYDoc(doc);
     setProvider(wsProvider);
 
@@ -463,6 +479,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       console.log(`[Collaboration] Disconnecting session for: ${editingId}`);
       clearTimeout(fallbackTimeout);
       wsProvider.off('status', statusHandler);
+      wsProvider.off('sync', handleInitialSync);
       wsProvider.awareness.off('change', handleAwarenessChange);
       wsProvider.disconnect();
       wsProvider.destroy();
@@ -520,6 +537,29 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   }, [extensions, editingId]); 
 
+  // Seed Yjs content from Firestore if Yjs is empty
+  useEffect(() => {
+    if (!yDoc || !provider || !editor || editor.isDestroyed || !editingId || !isAdding) return;
+
+    const seedIfEmpty = () => {
+      const xmlFragment = yDoc.getXmlFragment('default');
+      // If Yjs is completely empty (no children in the fragment)
+      if (xmlFragment.length === 0) {
+        const existingNote = notes.find(n => n.id === editingId);
+        if (existingNote?.htmlContent && existingNote.htmlContent !== '<p></p>') {
+          console.log('[Collaboration] Yjs is empty, seeding from Firestore htmlContent');
+          editor.commands.setContent(existingNote.htmlContent, true);
+        }
+      }
+    };
+
+    if (provider.synced) {
+      seedIfEmpty();
+    } else {
+      provider.once('sync', seedIfEmpty);
+    }
+  }, [yDoc, provider, editor, editingId, isAdding]);
+
   // Polling Fallback Logic: Listen to Firestore if WebSocket fails
   useEffect(() => {
     if (!pollSyncActive || !editingId || !editor || editor.isDestroyed || isConnected) return;
@@ -532,12 +572,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       
       // Only apply remote content if:
       // 1. We aren't typing locally (wait 2s after last key)
-      // 2. The author of the change isn't us (or it was restored)
-      // 3. User is NOT actively editing (no typingTimeout)
+      // 2. The author of the change isn't us
+      // 3. The remote document is NOT empty while we have content
       const remoteHtml = data.htmlContent || '';
       const localHtml = editor.getHTML();
       
       if (!typingTimeout.current && remoteHtml !== localHtml && data.updatedBy !== user?.uid) {
+        // Guard against overwriting local content with empty remote content if we have work
+        if (remoteHtml === '' || remoteHtml === '<p></p>') {
+            if (localHtml.length > 20) return; 
+        }
+        
         console.log('[Collaboration] Applying Firestore content update (Polling Mode)');
         editor.commands.setContent(remoteHtml, false);
       }
@@ -779,15 +824,33 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const handleExitEditor = async () => {
     if (editingId && editor && !editor.isDestroyed) {
       const text = editor.getText().trim();
-      const title = newNote.title.trim();
+      const html = editor.getHTML().trim();
+      const title = newNote.title.trim() || 'Tanpa Judul';
+      const tag = newNote.tag;
       
-      // Cleanup: if both title is placeholder and content is empty, delete it
-      if ((title === '' || title === 'Catatan Baru') && text === '') {
-        try {
+      setSaveStatus('saving');
+      
+      try {
+        // Final save for everything
+        await updateDoc(doc(db, 'notes', editingId), {
+          title: title,
+          tag: tag,
+          content: text.substring(0, 200),
+          htmlContent: html,
+          updatedAt: Timestamp.now(),
+          updatedBy: user?.uid
+        });
+
+        // Cleanup: if both title is placeholder/empty and content is empty, delete it
+        if ((title === 'Tanpa Judul' || title === 'Catatan Baru') && (text === '' || html === '<p></p>')) {
+          console.log('[Cleanup] Deleting empty placeholder note');
           await deleteDoc(doc(db, 'notes', editingId));
-        } catch (e) {
-          console.error('Cleanup error:', e);
+        } else {
+          saveHistorySnapshot();
         }
+        setSaveStatus('saved');
+      } catch (e) {
+        console.error('Final save error:', e);
       }
     }
     
@@ -1039,9 +1102,15 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               </div>
             </div>
 
-            {/* Document Content Background */}
-            <div className="flex-1 overflow-y-auto bg-gray-100/50 dark:bg-gray-900/30 custom-scrollbar scroll-smooth">
-              <div key={editingId || 'no-editor'} className="relative">
+            {/* Document Content Background - Improved Blending */}
+            <div className="flex-1 overflow-y-auto bg-[#f8f9fa] dark:bg-[#0f172a] custom-scrollbar scroll-smooth relative">
+              {/* Subtle background glow/texture */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute -top-[10%] -right-[10%] w-[40%] h-[40%] bg-blue-500/5 dark:bg-blue-500/10 blur-[120px] rounded-full" />
+                <div className="absolute -bottom-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-500/5 dark:bg-indigo-500/10 blur-[120px] rounded-full" />
+              </div>
+
+              <div key={editingId || 'no-editor'} className="relative z-10 px-4 md:px-0">
                 <AnimatePresence>
                   {showHistory && (
                       <motion.div 
@@ -1150,11 +1219,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   )}
                 </AnimatePresence>
 
-                <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1">
-                  {/* Document Page Simulation */}
-                  <div className="max-w-[850px] mx-auto my-12 bg-white dark:bg-gray-950 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-none rounded-sm min-h-[1056px] relative p-16 md:p-20 border border-gray-100 dark:border-gray-800 transition-all duration-500">
+                <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1 pb-32">
+                  {/* Document Page Simulation - Modern Minimalist */}
+                  <div className="max-w-[850px] mx-auto my-10 bg-white dark:bg-[#020617] shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] rounded-xl min-h-[1056px] relative p-12 md:p-20 border border-gray-200/50 dark:border-blue-900/20 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(0,0,0,0.08)] dark:hover:border-blue-800/40">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
-                      <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-p:text-slate-700 dark:prose-p:text-slate-300">
+                      <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-headings:tracking-tight prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-p:leading-relaxed selection:bg-blue-100 dark:selection:bg-blue-900/40">
                         <EditorContent editor={editor} />
                       </div>
                     ) : (
