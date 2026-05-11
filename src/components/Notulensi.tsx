@@ -315,6 +315,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -349,6 +350,72 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   };
 
   const isConnectedRef = useRef(false);
+
+  // Cloud Awareness (Presence tracking for Polling Mode)
+  useEffect(() => {
+    if (!editingId || !user || !isAdding) return;
+
+    // Heartbeat: Tell others we are viewing
+    const presenceDoc = doc(db, 'note_presence', `${editingId}_${user.uid}`);
+    
+    const updatePresence = async (isTyping = false) => {
+      try {
+        await setDoc(presenceDoc, {
+          uid: user.uid,
+          noteId: editingId,
+          name: user.displayName || 'Pengguna',
+          photo: user.photoURL,
+          color: userColor,
+          lastSeen: serverTimestamp(),
+          isTyping
+        }, { merge: true });
+      } catch (e) {
+        // Silently fail heartbeats
+      }
+    };
+
+    const heartbeat = setInterval(() => updatePresence(!!typingTimeout.current), 5000);
+    updatePresence(false);
+
+    // Listen to others in this specific note
+    const q = query(
+      collection(db, 'note_presence'), 
+      where('noteId', '==', editingId),
+      where('lastSeen', '>', new Date(Date.now() - 60000)) // Active in last 1min
+    );
+    
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const users: any[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.uid !== user.uid) {
+           users.push({
+             clientId: d.id,
+             name: data.name,
+             color: data.color,
+             isTyping: data.isTyping,
+             photo: data.photo,
+             uid: data.uid
+           });
+        }
+      });
+      
+      // If we are connected via Yjs, Yjs handles awareness. 
+      // If not, we use this Firestore-based awareness.
+      if (!isConnectedRef.current) {
+        setActiveUsers(users);
+      }
+    });
+
+    return () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      // Only delete if we are actually exiting the doc
+      setTimeout(() => {
+        deleteDoc(presenceDoc).catch(() => {});
+      }, 2000);
+    }
+  }, [editingId, user?.uid, isAdding]);
 
   // Handle Yjs and Websocket initialization
   useEffect(() => {
@@ -437,9 +504,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     const color = user.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16);
     wsProvider.awareness.setLocalStateField('user', {
       name: user.displayName || 'Anonim',
-      color: color,
+      color: userColor,
       isTyping: false,
-      avatar: user.photoURL || ''
+      photo: user.photoURL || '',
+      uid: user.uid,
+      cursor: null // Can store cursor position here for non-collaboration mode
     });
 
     // Update active users from awareness
@@ -448,9 +517,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       const active = states
         .map(([id, s]: [number, any]) => ({
           clientId: id,
-          ...s.user
+          name: s.user?.name,
+          color: s.user?.color,
+          isTyping: s.user?.isTyping,
+          photo: s.user?.photo,
+          uid: s.user?.uid
         }))
-        .filter(s => s && s.name);
+        .filter(s => s && s.name && s.uid !== user.uid);
       setActiveUsers(active);
     };
 
@@ -516,6 +589,20 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         user: {
           name: user?.displayName || 'Anonim',
           color: userColor,
+        },
+        render: (user: any) => {
+          const cursor = document.createElement('span')
+          cursor.classList.add('collaboration-cursor__caret')
+          cursor.style.color = user.color
+          cursor.style.borderColor = user.color
+
+          const label = document.createElement('div')
+          label.classList.add('collaboration-cursor__label')
+          label.style.backgroundColor = user.color
+          label.insertBefore(document.createTextNode(user.name), null)
+          
+          cursor.insertBefore(label, null)
+          return cursor
         },
       }),
     ] : []),
@@ -697,6 +784,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           
           saveHistorySnapshot();
           setSaveStatus('saved');
+          setLastSavedAt(new Date());
           setTimeout(() => {
             if (setSaveStatus) setSaveStatus(prev => prev === 'saved' ? 'idle' : prev);
           }, 3000);
@@ -841,6 +929,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           updatedBy: user?.uid
         });
 
+        setLastSavedAt(new Date());
+
         // Cleanup: if both title is placeholder/empty and content is empty, delete it
         if ((title === 'Tanpa Judul' || title === 'Catatan Baru') && (text === '' || html === '<p></p>')) {
           console.log('[Cleanup] Deleting empty placeholder note');
@@ -968,7 +1058,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         {isAdding ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
             {/* Header Editor - Minimalist Google Docs Style */}
-              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-white/50 dark:bg-transparent backdrop-blur-md flex items-center justify-between gap-4">
+              <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a252f] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                   <button 
                     onClick={handleExitEditor}
@@ -977,32 +1067,81 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   >
                     <ArrowLeft size={18} strokeWidth={2.5} />
                   </button>
-                  <div className="flex-1 min-w-0 max-w-[400px]">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 h-4 mb-0.5">
+                      {saveStatus === 'saving' ? (
+                        <span className="flex items-center gap-1 text-[9px] text-blue-500 font-black uppercase tracking-widest animate-pulse">
+                          <CloudUpload size={10} strokeWidth={3} /> Menyimpan...
+                        </span>
+                      ) : lastSavedAt ? (
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                          <CheckCircle2 size={10} className="text-green-500" />
+                          Terakhir disimpan {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Dokumen Berbagi</span>
+                      )}
+                    </div>
                     <input 
                       type="text" 
                       placeholder="Judul Dokumen..." 
                       value={newNote.title}
                       onChange={e => {
                         const title = e.target.value;
-                        setNewNote(prev => ({...prev, title}));
+                        setNewNote(prev => ({ ...prev, title }));
                         if (editingId) {
                           updateDoc(doc(db, 'notes', editingId), { title, updatedAt: Timestamp.now() });
                         }
                       }}
-                      className="w-full bg-transparent text-lg font-bold outline-none text-slate-800 dark:text-gray-100 truncate focus:bg-blue-50/10 dark:focus:bg-white/5 px-2 rounded -ml-2 transition-colors"
+                      className="w-full bg-transparent text-xl font-serif font-bold outline-none text-slate-800 dark:text-gray-100 truncate focus:bg-blue-50/10 dark:focus:bg-white/5 px-1.5 rounded -ml-1.5 transition-colors"
                     />
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
+                  {/* Presence indicator: Avatars of active users */}
+                  <div className="flex items-center -space-x-2 mr-2">
+                    {activeUsers.map((u, i) => (
+                      <motion.div 
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        key={u.clientId + i} 
+                        className="relative group/avatar"
+                      >
+                        <div 
+                          title={`${u.name} ${u.isTyping ? '(Sedang mengetik...)' : ''}`}
+                          className="w-9 h-9 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-black text-white relative transition-transform hover:scale-110 hover:z-10 shadow-sm cursor-help"
+                          style={{ backgroundColor: u.color }}
+                        >
+                          {u.photo ? (
+                             <img src={u.photo} alt={u.name} className="w-full h-full rounded-full object-cover" />
+                          ) : (
+                             u.name?.[0]?.toUpperCase()
+                          )}
+                          {u.isTyping && (
+                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-blue-500 border-2 border-white dark:border-gray-900 rounded-full flex items-center justify-center">
+                               <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
+                            </div>
+                          )}
+                        </div>
+                        {/* Hover Tooltip/Label */}
+                        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[9px] font-bold rounded opacity-0 group-hover/avatar:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 uppercase tracking-widest shadow-xl">
+                          {u.name} {u.isTyping ? '• Sedang Mengetik' : ''}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <div className="h-8 w-px bg-gray-100 dark:bg-gray-800 hidden md:block" />
+
                   <select 
                     value={newNote.tag}
                     onChange={e => {
-                      const tag = e.target.value;
-                      setNewNote(prev => ({...prev, tag}));
-                      if (editingId) {
-                        updateDoc(doc(db, 'notes', editingId), { tag, updatedAt: Timestamp.now() });
-                      }
+                        const tag = e.target.value;
+                        setNewNote(prev => ({ ...prev, tag }));
+                        if (editingId) {
+                          updateDoc(doc(db, 'notes', editingId), { tag, updatedAt: Timestamp.now() });
+                        }
                     }}
                     className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 border border-blue-100 dark:border-blue-900/30 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer"
                   >
@@ -1011,6 +1150,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     <option value="Memo">Memo</option>
                     <option value="Umum">General</option>
                   </select>
+
+                  <button 
+                    onClick={() => {
+                      fetchNoteHistory();
+                      setShowHistory(true);
+                    }}
+                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all"
+                    title="Riwayat Versi"
+                  >
+                    <History size={18} />
+                  </button>
                 </div>
               </div>
 
@@ -1246,13 +1396,63 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     )}
 
                     {/* Subtle Page indicators */}
-                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 opacity-20 hover:opacity-100 transition-opacity">
+                    <div className="absolute top-8 right-8 pointer-events-none">
+                      <div className="flex flex-col items-end gap-1 opacity-20 hover:opacity-100 transition-opacity">
+                         <div className="flex items-center gap-1.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${pollSyncActive && !isConnected ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
+                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">
+                               {pollSyncActive && !isConnected ? 'Sinkronisasi Cloud' : 'Koneksi Langsung'}
+                            </span>
+                         </div>
+                      </div>
+                    </div>
+
+                    {/* Page Break Indicator */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 opacity-10 hover:opacity-100 transition-opacity">
                       <div className="flex items-center gap-2">
                          <div className="h-px w-8 bg-gray-300" />
                          <span className="text-[8px] font-black uppercase tracking-[4px] text-gray-400">Halaman 1</span>
                          <div className="h-px w-8 bg-gray-300" />
                       </div>
                     </div>
+
+                    {/* Collaborative Typing Indicator Pill */}
+                    <AnimatePresence>
+                      {activeUsers.some(u => u.isTyping) && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 20 }}
+                          className="absolute bottom-12 right-12 flex items-center gap-2 px-4 py-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border border-gray-100 dark:border-gray-800 rounded-full shadow-xl z-30"
+                        >
+                          <div className="flex -space-x-1">
+                            {activeUsers.filter(u => u.isTyping).slice(0, 3).map(u => (
+                              <div 
+                                key={u.clientId} 
+                                className="w-5 h-5 rounded-full border border-white dark:border-gray-900 flex items-center justify-center text-[6px] font-black text-white"
+                                style={{ backgroundColor: u.color }}
+                              >
+                                {u.photo ? (
+                                  <img src={u.photo} alt={u.name} className="w-full h-full rounded-full object-cover" />
+                                ) : (
+                                  u.name?.[0]?.toUpperCase()
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">
+                            {activeUsers.filter(u => u.isTyping).length === 1 
+                              ? `${activeUsers.find(u => u.isTyping)?.name} sedang mengetik...`
+                              : `${activeUsers.filter(u => u.isTyping).length} orang sedang mengetik...`}
+                          </span>
+                          <div className="flex gap-0.5">
+                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                            <span className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
               </div>
