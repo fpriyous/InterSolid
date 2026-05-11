@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, ChangeEvent, useMemo } from 'react';
-import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock, History, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, FileText, Search, Clock, Pencil, Download, Bold, Italic, List as ListIcon, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Image as ImageIcon, Underline as UnderlineIcon, ArrowLeft, Save, Loader2, X, Undo, Redo, Upload, Lock, Unlock, History, RotateCcw, CloudUpload, CheckCircle2, FileCheck, FileEdit } from 'lucide-react';
 import { db, storage, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, setDoc, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -1150,11 +1150,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   )}
                 </AnimatePresence>
 
-                <div key={`editor-content-${editingId}`} className="editor-content-container relative">
+                <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1">
                   {/* Document Page Simulation */}
-                  <div className="max-w-[850px] mx-auto my-8 bg-white dark:bg-gray-950 shadow-2xl rounded-sm min-h-[1056px] relative p-12 md:p-16 border border-gray-100 dark:border-gray-800">
+                  <div className="max-w-[850px] mx-auto my-12 bg-white dark:bg-gray-950 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-none rounded-sm min-h-[1056px] relative p-16 md:p-20 border border-gray-100 dark:border-gray-800 transition-all duration-500">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
-                      <EditorContent editor={editor} />
+                      <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-p:text-slate-700 dark:prose-p:text-slate-300">
+                        <EditorContent editor={editor} />
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center py-64 gap-6">
                         <div className="relative">
@@ -1174,13 +1176,14 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       </div>
                     )}
 
-                    {/* Collaborative Cursors / Presence indicators for polling mode */}
-                    {pollSyncActive && !isConnected && (
-                       <div className="absolute top-4 right-8 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity">
-                         <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                         <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Polling Sync Active</span>
-                       </div>
-                    )}
+                    {/* Subtle Page indicators */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 opacity-20 hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-2">
+                         <div className="h-px w-8 bg-gray-300" />
+                         <span className="text-[8px] font-black uppercase tracking-[4px] text-gray-400">Halaman 1</span>
+                         <div className="h-px w-8 bg-gray-300" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1367,21 +1370,21 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Trash2 className="text-red-500" size={32} />
               </div>
-              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
+              <h3 className="font-serif text-2xl font-bold mb-2">Hapus Catatan?</h3>
               <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Catatan ini akan dihapus permanen</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => setConfirmId(null)}
-                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                  className="py-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all shadow-sm"
                 >
-                  faqeee
+                  Batalkan
                 </button>
                 <button 
                   onClick={() => deleteNote(confirmId)}
-                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
                 >
-                  reyal
+                  Hapus Permanen
                 </button>
               </div>
             </motion.div>
