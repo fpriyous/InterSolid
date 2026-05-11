@@ -30,27 +30,54 @@ interface Note {
 }
 
 const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImage: () => void, onOpenHistory: () => void }) => {
-  if (!editor) return null;
+  if (!editor || editor.isDestroyed || !editor.extensionManager) return null;
   
   // Force re-render on any editor state change to update active states immediately
   const [, setUpdate] = useState(0);
   useEffect(() => {
-    if (!editor) return;
-    const updateHandler = () => setUpdate(v => v + 1);
+    if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+    const updateHandler = () => {
+      if (!editor.isDestroyed && editor.extensionManager) {
+        setUpdate(v => v + 1);
+      }
+    };
     
     editor.on('transaction', updateHandler);
     editor.on('selectionUpdate', updateHandler);
     editor.on('update', updateHandler);
     
     return () => {
-      editor.off('transaction', updateHandler);
-      editor.off('selectionUpdate', updateHandler);
-      editor.off('update', updateHandler);
+      if (editor && !editor.isDestroyed && editor.extensionManager) {
+        try {
+          editor.off('transaction', updateHandler);
+          editor.off('selectionUpdate', updateHandler);
+          editor.off('update', updateHandler);
+        } catch (e) {
+          // ignore
+        }
+      }
     };
   }, [editor]);
 
-  const addImage = () => {
-    onAddImage();
+  const safeIsActive = (name: string, attributes?: any) => {
+    if (!editor || editor.isDestroyed || !editor.commands) return false;
+    try {
+      // Verify extensionManager and getExtension via duck typing before calling isActive
+      if (!(editor as any).extensionManager?.extensions) return false;
+      return editor.isActive(name, attributes);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const safeCan = () => {
+    if (!editor || editor.isDestroyed || !editor.commands) return { undo: () => false, redo: () => false };
+    try {
+      if (!(editor as any).extensionManager?.extensions) return { undo: () => false, redo: () => false };
+      return editor.can();
+    } catch (e) {
+      return { undo: () => false, redo: () => false };
+    }
   };
 
   return (
@@ -61,8 +88,11 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={typeof editor.can().undo !== 'function' || !editor.can().undo()}
+          onClick={() => {
+            if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+            editor.chain().focus().undo().run();
+          }}
+          disabled={!safeCan().undo()}
           className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 transition-all"
           title="Undo (Ctrl+Z)"
         >
@@ -71,8 +101,11 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={typeof editor.can().redo !== 'function' || !editor.can().redo()}
+          onClick={() => {
+            if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+            editor.chain().focus().redo().run();
+          }}
+          disabled={!safeCan().redo()}
           className="p-2 rounded-xl text-gray-400 hover:text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-20 transition-all"
           title="Redo (Ctrl+Y)"
         >
@@ -97,17 +130,18 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
       {/* Formatting Tools */}
       <div className="flex items-center gap-0.5 mx-2">
         {[
-          { name: 'bold', icon: Bold, action: () => editor.chain().focus().toggleBold().run(), title: 'Bold (Ctrl+B)' },
-          { name: 'italic', icon: Italic, action: () => editor.chain().focus().toggleItalic().run(), title: 'Italic (Ctrl+I)' },
-          { name: 'underline', icon: UnderlineIcon, action: () => editor.chain().focus().toggleUnderline().run(), title: 'Underline (Ctrl+U)' },
+          { name: 'bold', icon: Bold, title: 'Bold (Ctrl+B)' },
+          { name: 'italic', icon: Italic, title: 'Italic (Ctrl+I)' },
+          { name: 'underline', icon: UnderlineIcon, title: 'Underline (Ctrl+U)' },
         ].map((tool) => {
-          const isActive = editor.isActive(tool.name);
+          const isActive = safeIsActive(tool.name);
           return (
             <motion.button
               key={tool.name}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
+                if (!editor || editor.isDestroyed || !editor.extensionManager) return;
                 if (tool.name === 'bold') editor.chain().focus().toggleBold().run();
                 else if (tool.name === 'italic') editor.chain().focus().toggleItalic().run();
                 else editor.chain().focus().toggleUnderline().run();
@@ -143,14 +177,17 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
           { level: 1, icon: Heading1, title: 'Heading 1' },
           { level: 2, icon: Heading2, title: 'Heading 2' },
         ].map((h) => {
-          const isActive = editor.isActive('heading', { level: h.level });
+          const isActive = safeIsActive('heading', { level: h.level });
           return (
             <motion.button
               key={h.level}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               title={h.title}
-              onClick={() => editor.chain().focus().toggleHeading({ level: h.level as any }).run()}
+              onClick={() => {
+                if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+                editor.chain().focus().toggleHeading({ level: h.level as any }).run();
+              }}
               animate={{ 
                 scale: isActive ? 1.05 : 1,
                 backgroundColor: isActive ? '#3b82f6' : 'transparent',
@@ -182,14 +219,17 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
           { align: 'center', icon: AlignCenter, title: 'Align Center' },
           { align: 'right', icon: AlignRight, title: 'Align Right' },
         ].map((tool) => {
-          const isActive = editor.isActive({ textAlign: tool.align });
+          const isActive = safeIsActive({ textAlign: tool.align } as any);
           return (
             <motion.button
               key={tool.align}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               title={tool.title}
-              onClick={() => editor.chain().focus().setTextAlign(tool.align).run()}
+              onClick={() => {
+                if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+                editor.chain().focus().setTextAlign(tool.align).run();
+              }}
               animate={{ 
                 scale: isActive ? 1.05 : 1,
                 backgroundColor: isActive ? '#3b82f6' : 'transparent',
@@ -217,16 +257,20 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
       {/* Lists & Media */}
       <div className="flex items-center gap-0.5 ml-2">
         {[
-          { name: 'bulletList', icon: ListIcon, action: () => editor.chain().focus().toggleBulletList().run(), title: 'Bullet List' },
-          { name: 'orderedList', icon: ListOrdered, action: () => editor.chain().focus().toggleOrderedList().run(), title: 'Ordered List' },
+          { name: 'bulletList', icon: ListIcon, title: 'Bullet List' },
+          { name: 'orderedList', icon: ListOrdered, title: 'Ordered List' },
         ].map((tool) => {
-          const isActive = editor.isActive(tool.name);
+          const isActive = safeIsActive(tool.name);
           return (
             <motion.button
               key={tool.name}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={tool.action}
+              onClick={() => {
+                if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+                if (tool.name === 'bulletList') editor.chain().focus().toggleBulletList().run();
+                else if (tool.name === 'orderedList') editor.chain().focus().toggleOrderedList().run();
+              }}
               title={tool.title}
               animate={{ 
                 scale: isActive ? 1.05 : 1,
@@ -266,6 +310,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
+  const [connStatus, setConnStatus] = useState<string>('connecting');
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -273,6 +318,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
+  const connRetryCount = useRef(0);
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -289,7 +335,9 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
       
-      editor?.chain().focus().setImage({ src: downloadURL }).run();
+      if (editor && !editor.isDestroyed && (editor as any).extensionManager) {
+        editor.chain().focus().setImage({ src: downloadURL }).run();
+      }
     } catch (error: any) {
       console.error('Upload failed:', error);
       alert('Gagal mengunggah gambar: ' + error.message);
@@ -301,38 +349,84 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   // Handle Yjs and Websocket initialization
   useEffect(() => {
+    // We only need collaboration when editing an active note
     if (!editingId || !isAdding || !user) {
+      if (provider) {
+        console.log(`[Collaboration] Cleaning up session for: ${editingId}`);
+        try {
+          provider.disconnect();
+          provider.destroy();
+        } catch (e) {
+          console.warn('[Collaboration] Cleanup warning:', e);
+        }
+      }
       setYDoc(null);
       setProvider(null);
       setIsConnected(false);
+      setConnStatus('idle');
       return;
     }
 
     console.log(`[Collaboration] Initializing session for: ${editingId}`);
+    setConnStatus('connecting');
+    
+    // Create Yjs Doc
     const doc = new Y.Doc();
+    
+    // Determine the WS URL dynamically
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // We use a base path. y-websocket will automatically append /roomName
+    // The server handles /collaboration and /collaboration/*
     const wsUrl = `${protocol}//${host}/collaboration`;
     
+    console.log(`[Collaboration] Connecting to: ${wsUrl}/${editingId}`);
+    
+    // Create side-effect provider
     const wsProvider = new WebsocketProvider(wsUrl, editingId, doc, {
       connect: true,
-      params: { auth: 'true' }
+      params: { u: user.uid, t: Date.now().toString() } 
     });
     
     const statusHandler = (event: any) => {
       console.log(`[Collaboration] Status (${editingId}): ${event.status}`);
+      setConnStatus(event.status);
       setIsConnected(event.status === 'connected');
+      
+      if (event.status === 'connected') {
+        connRetryCount.current = 0;
+      } else if (event.status === 'disconnected') {
+        // Auto reconnect logic is built into y-websocket, but we can nudge it
+        console.log('[Collaboration] Connection lost, will attempt automatic reconnect...');
+      }
     };
 
     wsProvider.on('status', statusHandler);
+    
+    wsProvider.on('sync', (isSynced: boolean) => {
+      console.log(`[Collaboration] Sync (${editingId}):`, isSynced);
+      if (isSynced) {
+        setConnStatus('synced');
+      }
+    });
+
+    // Handle specific errors
+    wsProvider.on('connection-error', (err: any) => {
+      console.error(`[Collaboration] Connection Error (${editingId}):`, err);
+      setConnStatus('error');
+    });
+
+    wsProvider.on('connection-close', (err: any) => {
+      console.warn(`[Collaboration] Connection Closed (${editingId}):`, err);
+      setConnStatus('disconnected');
+    });
 
     // Set local awareness for cursors
     const color = user.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16);
     wsProvider.awareness.setLocalStateField('user', {
       name: user.displayName || 'Anonim',
       color: color,
-      isTyping: false
+      isTyping: false,
+      avatar: user.photoURL || ''
     });
 
     // Update active users from awareness
@@ -343,7 +437,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           clientId: id,
           ...s.user
         }))
-        .filter(s => s.name);
+        .filter(s => s && s.name);
       setActiveUsers(active);
     };
 
@@ -353,53 +447,72 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     setProvider(wsProvider);
 
     return () => {
+      console.log(`[Collaboration] Disconnecting session for: ${editingId}`);
+      wsProvider.off('status', statusHandler);
+      wsProvider.awareness.off('change', handleAwarenessChange);
       wsProvider.disconnect();
+      wsProvider.destroy();
       doc.destroy();
     };
-  }, [editingId, isAdding, user]);
+  }, [editingId, isAdding, user?.uid]); // Stability: only re-init if editing target or user ID changes
+
+  // Add stable user color based on UID
+  const userColor = useMemo(() => {
+    if (!user) return '#3b82f6';
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    const index = user.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    return colors[index];
+  }, [user?.uid]);
+
+  const extensions = useMemo(() => [
+    StarterKit.configure({
+      history: yDoc ? false : {}, 
+    }),
+    Underline,
+    Image,
+    TextAlign.configure({
+      types: ['heading', 'paragraph'],
+    }),
+    Placeholder.configure({
+      placeholder: 'Mulai mengetik catatan materi atau rapat di sini...',
+    }),
+    ...(yDoc ? [
+      Collaboration.configure({
+        document: yDoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider,
+        user: {
+          name: user?.displayName || 'Anonim',
+          color: userColor,
+        },
+      }),
+    ] : []),
+  ], [yDoc, provider, user?.displayName, userColor]);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        history: {}, 
-      }),
-      Underline,
-      Image,
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
-      Placeholder.configure({
-        placeholder: 'Mulai mengetik catatan materi atau rapat di sini...',
-      }),
-      // Only enable collaboration if we have a document
-      ...(yDoc ? [
-        Collaboration.configure({
-          document: yDoc,
-        }),
-        CollaborationCursor.configure({
-          provider: provider,
-          user: {
-            name: user?.displayName || 'Anonim',
-            color: user?.photoURL?.includes('gradient') ? '#3b82f6' : '#' + Math.floor(Math.random() * 16777215).toString(16),
-          },
-        }),
-      ] : []),
-    ],
-    content: (notes.find(n => n.id === editingId)?.htmlContent) || '',
+    extensions,
+    content: yDoc ? undefined : (notes.find(n => n.id === editingId)?.htmlContent) || '',
     editable: !selectedNote?.isLocked || isAdmin,
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[500px] p-6 leading-relaxed text-gray-700 dark:text-gray-200 outline-none select-text cursor-text',
         style: 'pointer-events: auto !important;'
       },
     },
-  }, [yDoc, provider, editingId, user?.uid, isAdmin]); // Re-init when yDoc or context changes
+    onUpdate: () => {
+      // Logic for save is handled in the separate useEffect
+    }
+  }, [extensions, editingId]); 
 
   const [isSaving, setIsSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [historyDocs, setHistoryDocs] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const lastHistorySave = useRef<number>(0);
+  const autoSaveTimeout = useRef<any>(null);
+  const typingTimeout = useRef<any>(null);
 
   // Fetch History snapshots
   const fetchNoteHistory = async () => {
@@ -423,7 +536,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   // Save history snapshot (Throttled to once per minute of activity)
   const saveHistorySnapshot = async () => {
-    if (!editor || !editingId || !user) return;
+    if (!editor || editor.isDestroyed || !editor.extensionManager || !editingId || !user) return;
     const now = Date.now();
     if (now - lastHistorySave.current < 60000) return; // Minimum 1 minute interval
 
@@ -449,36 +562,46 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   useEffect(() => {
     if (!editor || !isAdding || !editingId || !provider) return;
 
-    let timeout: any;
-    let typingTimeout: any;
-
     const handleUpdate = () => {
+      if (!editor || editor.isDestroyed || !editor.extensionManager) return;
+      
       // Manage typing awareness if connected
-      if (isConnected) {
-        provider.awareness.setLocalStateField('user', {
-          ...provider.awareness.getLocalState()?.user,
-          isTyping: true
-        });
-
-        clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
+      if (isConnected && provider) {
+        try {
           provider.awareness.setLocalStateField('user', {
             ...provider.awareness.getLocalState()?.user,
-            isTyping: false
+            isTyping: true
           });
-        }, 2000);
+
+          if (typingTimeout.current) clearTimeout(typingTimeout.current);
+          typingTimeout.current = setTimeout(() => {
+            if (provider && provider.awareness && !editor.isDestroyed) {
+              try {
+                provider.awareness.setLocalStateField('user', {
+                  ...provider.awareness.getLocalState()?.user,
+                  isTyping: false
+                });
+              } catch (e) {
+                // Ignore awareness cleanup errors on disconnect
+              }
+            }
+          }, 2000);
+        } catch (e) {
+          // Ignore awareness errors
+        }
       }
 
       setSaveStatus('saving');
-      clearTimeout(timeout);
-      timeout = setTimeout(async () => {
-        const html = editor.getHTML();
-        const text = editor.getText();
+      if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
+      autoSaveTimeout.current = setTimeout(async () => {
+        if (!editor || editor.isDestroyed || !editor.extensionManager) {
+          setSaveStatus('idle');
+          return;
+        }
         
         try {
-          // Robust path for logging
-          const path = `notes/${editingId}`;
-          console.log(`[AutoSave] Saving to Firestore: ${path}`);
+          const html = editor.getHTML();
+          const text = editor.getText();
           
           await updateDoc(doc(db, 'notes', editingId), {
             content: text.substring(0, 200),
@@ -489,7 +612,9 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           
           saveHistorySnapshot();
           setSaveStatus('saved');
-          setTimeout(() => setSaveStatus('idle'), 3000);
+          setTimeout(() => {
+            if (setSaveStatus) setSaveStatus(prev => prev === 'saved' ? 'idle' : prev);
+          }, 3000);
         } catch (e) {
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
@@ -497,11 +622,20 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       }, 5000); 
     };
 
-    editor.on('update', handleUpdate);
+    if (editor && !editor.isDestroyed) {
+      editor.on('update', handleUpdate);
+    }
     return () => {
-      editor.off('update', handleUpdate);
-      clearTimeout(timeout);
-      clearTimeout(typingTimeout);
+      if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
+      if (typingTimeout.current) clearTimeout(typingTimeout.current);
+      
+      if (editor && !editor.isDestroyed) {
+        try {
+          editor.off('update', handleUpdate);
+        } catch (e) {
+          // Silent catch
+        }
+      }
     };
   }, [editor, isAdding, editingId, user, isConnected, provider]);
 
@@ -568,7 +702,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   };
 
   const addNote = async () => {
-    if (!user || !editor) return;
+    if (!user || !editor || editor.isDestroyed) return;
     
     setLoading(true);
     try {
@@ -587,7 +721,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setNewNote({ title: 'Catatan Baru', tag: 'Umum' });
       setIsAdding(true);
       setSelectedNote(null);
-      editor.commands.setContent('');
+      
+      if (editor && !editor.isDestroyed) {
+        editor.commands.setContent('');
+      }
       
       logPortalActivity('note_create', 'Membuat catatan baru', user);
     } catch (e: any) {
@@ -600,7 +737,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   };
 
   const handleExitEditor = async () => {
-    if (editingId && editor) {
+    if (editingId && editor && !editor.isDestroyed) {
       const text = editor.getText().trim();
       const title = newNote.title.trim();
       
@@ -742,7 +879,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       <span className="text-[9px] font-black uppercase tracking-widest text-blue-500/60 leading-none">Dokumen Berbagi</span>
                       {saveStatus === 'saving' && (
                         <span className="flex items-center gap-1 text-[9px] text-gray-400 animate-pulse">
-                          <Loader2 size={8} className="animate-spin" /> Menyimulasikan...
+                          <Loader2 size={8} className="animate-spin" /> Menyimpan...
                         </span>
                       )}
                       {saveStatus === 'saved' && (
@@ -767,10 +904,19 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 
                 {/* Live Collaboration Status & Tags */}
                 <div className="flex items-center justify-between md:justify-end gap-3 px-1">
-                  <div className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-900/30'} border rounded-full transition-colors`}>
-                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-orange-400'}`} />
-                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'} tracking-tighter`}>
-                      {isConnected ? 'LIVE SYNC' : 'Connecting...'}
+                  <div 
+                    title={`Status: ${connStatus}`}
+                    onClick={() => {
+                        if (provider && !isConnected) {
+                            console.log('[Collaboration] Manual reconnect triggered');
+                            provider.connect();
+                        }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : connStatus === 'connecting' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'} border rounded-full transition-all cursor-pointer hover:shadow-md active:scale-95`}
+                  >
+                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : connStatus === 'connecting' ? 'bg-amber-500 animate-bounce' : 'bg-red-400'}`} />
+                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : connStatus === 'connecting' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'} tracking-tighter`}>
+                      {isConnected ? (connStatus === 'synced' ? 'SINKRONASI AKTIF' : 'MENYINKRONKAN...') : connStatus === 'connecting' ? 'MENYAMBUNGKAN...' : 'Gagal Konek (Klik Reconnect)'}
                     </span>
                   </div>
 
@@ -838,153 +984,143 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
             {/* Toolbar */}
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-            <MenuBar 
-              editor={editor} 
-              onAddImage={() => setShowImageModal(true)} 
-              onOpenHistory={() => {
-                fetchNoteHistory();
-                setShowHistory(true);
-              }}
-            />
+            {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
+              <MenuBar 
+                editor={editor} 
+                onAddImage={() => setShowImageModal(true)} 
+                onOpenHistory={() => {
+                  fetchNoteHistory();
+                  setShowHistory(true);
+                }}
+              />
+            ) : (
+              <div className="h-[48px] bg-gray-50/50 dark:bg-gray-900/50 flex items-center px-4 gap-2 border-b border-gray-100 dark:border-gray-800">
+                <Loader2 size={14} className="animate-spin text-blue-500" />
+                <span className="text-[10px] font-bold text-gray-400">Menunggu Sinkronisasi Tiptap...</span>
+              </div>
+            )}
 
-            {/* Editor Area */}
-            <div className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent relative">
-              <AnimatePresence>
-                {showHistory && (
-                    <motion.div 
-                    initial={{ x: '100%' }}
-                    animate={{ x: 0 }}
-                    exit={{ x: '100%' }}
-                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="absolute inset-y-0 right-0 w-full sm:w-[320px] bg-white dark:bg-[#1a252f] border-l border-gray-100 dark:border-gray-800 shadow-2xl z-[500] flex flex-col pointer-events-auto"
-                  >
-                    <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900/50">
-                      <div className="flex items-center gap-2">
-                        <History size={16} className="text-amber-500" />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Riwayat Perubahan</span>
-                      </div>
-                      <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-all z-10">
-                        <X size={16} />
-                      </button>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                      {loadingHistory ? (
-                        <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-50">
-                           <Loader2 size={24} className="animate-spin text-blue-500" />
-                           <span className="text-[9px] font-bold">Memuat arsip...</span>
+              {/* Editor Area */}
+              <div key={editingId || 'no-editor'} className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent relative">
+                <AnimatePresence>
+                  {showHistory && (
+                      <motion.div 
+                      key="history-panel"
+                      initial={{ x: '100%' }}
+                      animate={{ x: 0 }}
+                      exit={{ x: '100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                      className="absolute inset-y-0 right-0 w-full sm:w-[320px] bg-white dark:bg-[#1a252f] border-l border-gray-100 dark:border-gray-800 shadow-2xl z-[500] flex flex-col pointer-events-auto"
+                    >
+                      <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900/50">
+                        <div className="flex items-center gap-2">
+                          <History size={16} className="text-amber-500" />
+                          <span className="text-[10px] font-black uppercase tracking-widest">Riwayat Perubahan</span>
                         </div>
-                      ) : historyDocs.length === 0 ? (
-                        <div className="text-center py-12 opacity-30 italic text-[10px]">Belum ada riwayat tercatat.</div>
-                      ) : (
-                        historyDocs.map((hDoc, idx) => (
-                          <div key={hDoc.id} className="group relative">
-                            <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-amber-500/20 group-hover:bg-amber-500 transition-all rounded-full" />
-                            <div className="pl-4">
-                              <p className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mb-1">
-                                {hDoc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                              </p>
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] font-black text-white shrink-0">
-                                  {hDoc.editorName?.[0]?.toUpperCase()}
+                        <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-all z-10">
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                        {loadingHistory ? (
+                          <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-50">
+                             <Loader2 size={24} className="animate-spin text-blue-500" />
+                             <span className="text-[9px] font-bold">Memuat arsip...</span>
+                          </div>
+                        ) : historyDocs.length === 0 ? (
+                          <div className="text-center py-12 opacity-30 italic text-[10px]">Belum ada riwayat tercatat.</div>
+                        ) : (
+                          historyDocs.map((hDoc, idx) => (
+                            <div key={hDoc.id} className="group relative">
+                              <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-amber-500/20 group-hover:bg-amber-500 transition-all rounded-full" />
+                              <div className="pl-4">
+                                <p className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mb-1">
+                                  {hDoc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] font-black text-white shrink-0">
+                                    {hDoc.editorName?.[0]?.toUpperCase()}
+                                  </div>
+                                  <span className="text-[10px] font-bold truncate">{hDoc.editorName}</span>
                                 </div>
-                                <span className="text-[10px] font-bold truncate">{hDoc.editorName}</span>
-                              </div>
-                              <button 
-                                type="button"
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  
-                                  if (!editor) {
-                                    alert("Editor belum siap. Mohon tunggu sampa status 'LIVE SYNC' aktif.");
-                                    return;
-                                  }
-
-                                  const confirmed = window.confirm("Pulihkan ke versi ini? Konten di editor akan ditimpa secara permanen untuk SEMUA pengguna.");
-                                  if (!confirmed) return;
-
-                                   try {
-                                    setSaveStatus('saving');
-                                    console.log("[History] Restoring content for note:", editingId);
+                                <button 
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
                                     
-                                    // 1. Force update the local editor
-                                    if (editor) {
-                                      // If yDoc/Collaboration is active, try to use a transaction for clean sync
+                                    if (!editor || editor.isDestroyed || !editor.commands || !(editor as any).extensionManager) {
+                                      alert("Editor belum siap.");
+                                      return;
+                                    }
+
+                                    const confirmed = window.confirm("Pulihkan ke versi ini?");
+                                    if (!confirmed) return;
+
+                                     try {
+                                      setSaveStatus('saving');
                                       if (yDoc) {
                                         try {
-                                          // @ts-ignore
                                           const xmlFragment = yDoc.getXmlFragment('default');
                                           yDoc.transact(() => {
                                             xmlFragment.delete(0, xmlFragment.length);
                                             editor.commands.setContent(hDoc.htmlContent, true);
                                           });
-                                          console.log("[History] Yjs transaction completed");
                                         } catch (yErr) {
-                                          console.warn("[History] Yjs transaction failed, falling back to direct setContent:", yErr);
                                           editor.commands.setContent(hDoc.htmlContent, true);
                                         }
                                       } else {
                                         editor.commands.setContent(hDoc.htmlContent, true);
                                       }
-                                    }
 
-                                    // 2. CRITICAL: Update Firestore directly for persistence (and to trigger onSnapshot for others)
-                                    if (editingId) {
-                                      const path = `notes/${editingId}`;
-                                      try {
+                                      if (editingId) {
                                         await updateDoc(doc(db, 'notes', editingId), {
                                           htmlContent: hDoc.htmlContent,
-                                          content: editor?.getText().substring(0, 200) || '',
+                                          content: editor.getText().substring(0, 200),
                                           updatedAt: Timestamp.now(),
                                           updatedBy: user?.uid + " (Restored)"
                                         });
-                                      } catch (err) {
-                                        handleFirestoreError(err, OperationType.UPDATE, path);
                                       }
+                                      
+                                      setShowHistory(false);
+                                      setSaveStatus('saved');
+                                      alert("Berhasil dipulihkan!");
+                                    } catch (err) {
+                                      console.error(err);
+                                      alert("Gagal memulihkan.");
                                     }
-                                    
-                                    setShowHistory(false);
-                                    setSaveStatus('saved');
-                                    
-                                    if (user) {
-                                      logPortalActivity('note_history_restore', `Memulihkan riwayat catatan [${editingId}]`, user);
-                                    }
-                                    
-                                    alert("Catatan berhasil dipulihkan!");
-                                    console.log("[History] Restore success: Editor + Firestore synced");
-                                  } catch (err) {
-                                    console.error("[History] Restoration Critical Error:", err);
-                                    if (err instanceof Error && err.message.startsWith('{')) {
-                                      // It's our JSON error info
-                                      const info = JSON.parse(err.message);
-                                      alert(`Izin Gagal: Anda tidak memiliki akses untuk memulihkan catatan ini (${info.operationType}).`);
-                                    } else {
-                                      alert("Gagal memulihkan catatan secara penuh. Periksa koneksi internet Anda.");
-                                    }
-                                  }
-                                }}
-                                className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"
-                              >
-                                <RotateCcw size={12} strokeWidth={3} /> PULIHKAN VERSI INI
-                              </button>
+                                  }}
+                                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"
+                                >
+                                  <RotateCcw size={12} strokeWidth={3} /> PULIHKAN VERSI INI
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    
-                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-100 dark:border-amber-900/20">
-                      <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium leading-relaxed">
-                        <b>Tips Anti-Vandalisme:</b> Riwayat menyimpan 20 perubahan terakhir secara otomatis. Gunakan tombol pulihkan jika ada konten yang sengaja dirusak.
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                          ))
+                        )}
+                      </div>
+                      
+                      <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-100 dark:border-amber-900/20">
+                        <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium leading-relaxed">
+                          <b>Tips Anti-Vandalisme:</b> Riwayat menyimpan 20 perubahan terakhir secara otomatis. Gunakan tombol pulihkan jika ada konten yang sengaja dirusak.
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-              <EditorContent editor={editor} />
-            </div>
+                <div key={`editor-content-${editingId}`} className="editor-content-container">
+                  {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
+                    <EditorContent editor={editor} />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-32 gap-4 bg-gray-50/30 dark:bg-gray-900/10 rounded-2xl">
+                      <Loader2 size={32} className="animate-spin text-blue-500 opacity-50" />
+                      <p className="text-[10px] font-black font-mono tracking-widest uppercase text-gray-400">Synchronizing Session...</p>
+                    </div>
+                  )}
+                </div>
+              </div>
           </div>
         ) : selectedNote ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl relative group overflow-hidden flex flex-col animate-in fade-in duration-500">
@@ -1132,7 +1268,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     <button 
                       onClick={() => {
                         const input = document.getElementById('image-url-input') as HTMLInputElement;
-                        if (input.value) {
+                        if (input.value && editor && !editor.isDestroyed && (editor as any).extensionManager) {
                           editor.chain().focus().setImage({ src: input.value }).run();
                           setShowImageModal(false);
                         }

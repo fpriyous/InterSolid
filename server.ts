@@ -172,45 +172,43 @@ async function startServer() {
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws, req) => {
-    const url = new URL(req.url || '', 'http://localhost');
+    const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
     const parts = url.pathname.split('/').filter(Boolean);
     const roomName = parts.length > 0 ? parts[parts.length - 1] : 'default';
     
-    console.log(`[Collaboration] 🟢 New client connected to room: ${roomName} (Total clients: ${wss.clients.size})`);
+    console.log(`[Collaboration] 🟢 New client connected to room: "${roomName}" from URL: "${req.url}" (Total clients: ${wss.clients.size})`);
     
-    ws.on('close', () => {
-      console.log(`[Collaboration] 🔴 Client disconnected from room: ${roomName} (Remaining: ${wss.clients.size})`);
+    ws.on('close', (code, reason) => {
+      console.log(`[Collaboration] 🔴 Client disconnected from room: "${roomName}" (Code: ${code}, Reason: ${reason}) (Remaining: ${wss.clients.size})`);
     });
 
     ws.on('error', (err) => {
-      console.error(`[Collaboration] ❌ WebSocket error for room ${roomName}:`, err);
+      console.error(`[Collaboration] ❌ WebSocket error for room "${roomName}":`, err);
     });
 
-    setupWSConnection(ws, req, { docName: roomName, gc: true });
+    try {
+      setupWSConnection(ws, req, { docName: roomName, gc: true });
+      console.log(`[Collaboration] ✅ setupWSConnection initialized for room: "${roomName}"`);
+    } catch (err) {
+      console.error(`[Collaboration] ❌ setupWSConnection failed for room: "${roomName}":`, err);
+    }
   });
 
-  // Handle upgrade to WebSocket
   server.on('upgrade', (request, socket, head) => {
     try {
-      const url = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`);
-      const pathname = url.pathname;
+      const pathname = request.url || '';
       
-      console.log(`[Collaboration] Handshake: ${pathname} (Host: ${request.headers.host})`);
-      
-      if (pathname === '/collaboration' || pathname.startsWith('/collaboration/')) {
+      if (pathname.includes('/collaboration')) {
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
         });
-      } else if (pathname.startsWith('/@vite') || pathname.includes('vite')) {
-        // Let Vite handle its own upgrades (HMR) if they ever occur
-        console.log(`[Vite] HMR Upgrade bypassed: ${pathname}`);
       } else {
-        console.warn(`[Collaboration] Rejected Upgrade: ${pathname}`);
-        socket.destroy();
+        // If it's not collaboration, let it pass (could be Vite HMR)
+        // We don't destroy it here to avoid blocking Vite
       }
     } catch (err) {
-      console.error('[Collaboration] Upgrade Error:', err);
-      socket.destroy();
+      console.error('[WS Upgrade Error]:', err);
+      if (socket.writable) socket.destroy();
     }
   });
 

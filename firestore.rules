@@ -1,65 +1,108 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Basic helpers
+    // Global Safety: Deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
     
+    // The "Dewa" check - infallible access for the owner
     function isDewa() {
-      return isSignedIn() && request.auth.token.email == 'fpriyous@gmail.com';
+      return isSignedIn() && 
+             (request.auth.token.email == 'fpriyous@gmail.com' || 
+              request.auth.uid == 'DEWA_ID_FALLBACK'); 
     }
 
-    match /{document=**} {
-      allow read, write: if isDewa();
+    // Is the user an admin according to the admins collection?
+    function isAdmin() {
+      return isSignedIn() && (isDewa() || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
 
-    // Collection rules
+    // Is the user verified?
+    function isMember() {
+      return isSignedIn();
+    }
+
+    // --- REVOLUTIONARY PERMISSION BLOCKS ---
+    
+    // Notes: Real-time Collaboration & History
+    match /notes/{noteId} {
+      allow read: if true;
+      allow write: if isMember();
+      
+      match /history/{snapshotId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
+    }
+
+    // Absen / Attendance Tables
+    match /absenTables/{tableId} {
+      allow read: if true;
+      allow write: if isMember();
+      
+      match /rows/{rowId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
+      match /cols/{colId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
+    }
+
+    // Activity Logs & Monitoring
+    match /portal_logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if isDewa();
+    }
+    match /spin_logs/{logId} {
+      allow read: if true;
+      allow write: if isMember();
+    }
+    match /table_activity/{logId} {
+      allow read, write: if isMember();
+    }
+
+    // Community Features
+    match /aspirasi/{id} {
+      allow read: if true;
+      allow write: if isMember();
+    }
     match /announcements/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin();
     }
     match /events/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin();
     }
-    match /notes/{allPaths=**} {
+    match /polls/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isMember();
     }
-    match /polls/{allPaths=**} {
+    match /memories/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isMember();
     }
-    match /aspirasi/{id} {
-      allow read: if true;
-      allow write: if isSignedIn();
-    }
-    match /absenTables/{allPaths=**} {
-      allow read: if true;
-      allow write: if isSignedIn();
-    }
+
+    // Security & Auth
     match /notifications/{id} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isDewa());
+      allow write: if isMember();
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isDewa());
     }
     match /admins/{id} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isMember();
     }
-    match /memories/{allPaths=**} {
-      allow read: if true;
-      allow write: if isSignedIn();
-    }
-    match /portal_logs/{id} {
-      allow read, create: if true;
-      allow update, delete: if isSignedIn();
-    }
-    match /spin_logs/{id} {
-      allow read, write: if isSignedIn();
-    }
-    match /table_activity/{id} {
-      allow read, write: if isSignedIn();
-    }
+
+    // System Check
     match /test/connection {
       allow read, write: if true;
     }
