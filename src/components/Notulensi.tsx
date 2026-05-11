@@ -662,21 +662,37 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       if (!snap.exists()) return;
       const data = snap.data();
       
-      // Only apply remote content if:
-      // 1. We aren't typing locally (wait 2s after last key)
-      // 2. The author of the change isn't us
-      // 3. The remote document is NOT empty while we have content
       const remoteHtml = data.htmlContent || '';
       const localHtml = editor.getHTML();
       
       if (!typingTimeout.current && remoteHtml !== localHtml && data.updatedBy !== user?.uid) {
-        // Guard against overwriting local content with empty remote content if we have work
         if (remoteHtml === '' || remoteHtml === '<p></p>') {
             if (localHtml.length > 20) return; 
         }
         
         console.log('[Collaboration] Applying Firestore content update (Polling Mode)');
+        
+        // Preserve selection and scroll position
+        const { from, to } = editor.state.selection;
+        const scrollPos = document.querySelector('.flex-1.overflow-y-auto')?.scrollTop;
+
         editor.commands.setContent(remoteHtml, false);
+        
+        try {
+          // Restore selection if indices are still valid
+          const maxPos = editor.state.doc.content.size;
+          editor.commands.setTextSelection({ 
+            from: Math.min(from, maxPos), 
+            to: Math.min(to, maxPos) 
+          });
+          
+          if (scrollPos !== undefined) {
+            const el = document.querySelector('.flex-1.overflow-y-auto');
+            if (el) el.scrollTop = scrollPos;
+          }
+        } catch (e) {
+          // Fallback if selection restoration fails
+        }
       }
     });
 
@@ -764,13 +780,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           } catch (e) {}
         }
         typingTimeout.current = undefined;
-      }, 2000);
+      }, 800);
 
       setSaveStatus('saving');
       if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
       
-      // Much faster sync in polling mode to feel "live" (1.2s vs 3s)
-      const debounceTime = pollSyncActive && !isConnected ? 1200 : 3000;
+      // Much faster sync in polling mode to feel "live" (800ms vs 3000ms)
+      const debounceTime = pollSyncActive && !isConnected ? 800 : 3000;
       
       autoSaveTimeout.current = setTimeout(async () => {
         if (!editor || editor.isDestroyed || !editor.extensionManager) {
@@ -1260,11 +1276,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
             </div>
 
             {/* Document Content Background - Improved Blending */}
-            <div className="flex-1 overflow-y-auto bg-[#f8f9fa] dark:bg-[#0f172a] custom-scrollbar scroll-smooth relative">
+            <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-[#020617] custom-scrollbar scroll-smooth relative">
               {/* Subtle background glow/texture */}
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute -top-[10%] -right-[10%] w-[40%] h-[40%] bg-blue-500/5 dark:bg-blue-500/10 blur-[120px] rounded-full" />
-                <div className="absolute -bottom-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-500/5 dark:bg-indigo-500/10 blur-[120px] rounded-full" />
+                <div className="absolute -top-[10%] -right-[10%] w-[50%] h-[50%] bg-blue-500/[0.03] dark:bg-blue-500/[0.05] blur-[150px] rounded-full" />
+                <div className="absolute -bottom-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-500/[0.03] dark:bg-indigo-500/[0.05] blur-[150px] rounded-full" />
               </div>
 
               <div key={editingId || 'no-editor'} className="relative z-10 px-4 md:px-0">
@@ -1378,7 +1394,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
                 <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1 pb-32">
                   {/* Document Page Simulation - Modern Minimalist */}
-                  <div className="max-w-[850px] mx-auto my-10 bg-white dark:bg-[#020617] shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] rounded-xl min-h-[1056px] relative p-12 md:p-20 border border-gray-200/50 dark:border-blue-900/20 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(0,0,0,0.08)] dark:hover:border-blue-800/40">
+                  <div className="max-w-[850px] mx-auto my-6 md:my-12 bg-white dark:bg-[#0f172a] shadow-[0_2px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-xl min-h-[1056px] relative p-10 md:p-20 border border-gray-200/40 dark:border-blue-900/10 transition-all duration-500 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:border-blue-700/20">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
                       <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-headings:tracking-tight prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-p:leading-relaxed selection:bg-blue-100 dark:selection:bg-blue-900/40">
                         <EditorContent editor={editor} />
@@ -1431,26 +1447,26 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                             const pos = Math.min(u.cursorIndex, editor.state.doc.content.size);
                             const coords = editor.view.coordsAtPos(pos);
                             const editorBounds = editor.view.dom.getBoundingClientRect();
-                            const containerBounds = document.querySelector('.editor-content-container')?.getBoundingClientRect();
                             
-                            if (!coords || !containerBounds) return null;
+                            if (!coords) return null;
 
                             // Calculate relative position within the editor container
-                            const left = coords.left - editorBounds.left + 64; // Adjust for md:p-20 padding (roughly)
-                            const top = coords.top - editorBounds.top + 80;
+                            // We use viewport-relative calculation to be precise
+                            const left = coords.left - editorBounds.left;
+                            const top = coords.top - editorBounds.top;
 
                             return (
                               <motion.div 
                                 key={`cursor-${u.clientId}`}
                                 initial={{ opacity: 0 }}
-                                animate={{ opacity: 1, left, top }}
+                                animate={{ opacity: 1, x: left, y: top }}
                                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                className="absolute pointer-events-none"
+                                className="absolute top-0 left-0 pointer-events-none"
                               >
                                 <div className="relative">
                                   {/* Caret */}
                                   <div 
-                                    className="w-[2px] h-5 transition-colors"
+                                    className="w-[2px] h-5 transition-colors animate-pulse"
                                     style={{ backgroundColor: u.color }}
                                   />
                                   {/* Label */}
