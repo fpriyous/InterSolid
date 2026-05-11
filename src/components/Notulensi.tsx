@@ -904,28 +904,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       <div className={`${isAdding ? 'lg:col-span-4' : 'lg:col-span-3'}`}>
         {isAdding ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
-            {/* Header Editor */}
-              <div className="p-4 md:p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col md:flex-row items-stretch md:items-center justify-between bg-white dark:bg-[#1a252f] backdrop-blur-xl gap-4">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Header Editor - Minimalist Google Docs Style */}
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-white/50 dark:bg-transparent backdrop-blur-md flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
                   <button 
                     onClick={handleExitEditor}
-                    className="p-2.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0"
+                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all shrink-0"
                     title="Simpan & Keluar"
                   >
                     <ArrowLeft size={18} strokeWidth={2.5} />
                   </button>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-blue-500/60 leading-none">Dokumen Berbagi</span>
-                      {saveStatus === 'saving' && (
-                        <span className="flex items-center gap-1 text-[9px] text-gray-400 animate-pulse">
-                          <Loader2 size={8} className="animate-spin" /> Menyimpan...
-                        </span>
-                      )}
-                      {saveStatus === 'saved' && (
-                        <span className="text-[9px] text-green-500 font-bold">Tersimpan ke Cloud</span>
-                      )}
-                    </div>
+                  <div className="flex-1 min-w-0 max-w-[400px]">
                     <input 
                       type="text" 
                       placeholder="Judul Dokumen..." 
@@ -937,72 +926,12 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                           updateDoc(doc(db, 'notes', editingId), { title, updatedAt: Timestamp.now() });
                         }
                       }}
-                      className="w-full bg-transparent text-lg md:text-xl font-bold outline-none text-slate-900 dark:text-white truncate"
+                      className="w-full bg-transparent text-lg font-bold outline-none text-slate-800 dark:text-gray-100 truncate focus:bg-blue-50/10 dark:focus:bg-white/5 px-2 rounded -ml-2 transition-colors"
                     />
                   </div>
                 </div>
                 
-                {/* Live Collaboration Status & Tags */}
-                <div className="flex items-center justify-between md:justify-end gap-3 px-1">
-                  <div 
-                    title={`Status: ${connStatus}`}
-                    onClick={() => {
-                        if (provider && !isConnected) {
-                            console.log('[Collaboration] Manual reconnect triggered');
-                            provider.connect();
-                        }
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1 ${isConnected ? 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30' : pollSyncActive ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : connStatus === 'connecting' ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/20' : 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'} border rounded-full transition-all cursor-pointer hover:shadow-md active:scale-95`}
-                  >
-                    <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : pollSyncActive ? 'bg-amber-400 animate-pulse' : connStatus === 'connecting' ? 'bg-amber-500 animate-bounce' : 'bg-red-400'}`} />
-                    <span className={`text-[8px] md:text-[9px] font-black uppercase ${isConnected ? 'text-green-600 dark:text-green-400' : pollSyncActive ? 'text-amber-600 dark:text-amber-400' : connStatus === 'connecting' ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'} tracking-tighter`}>
-                      {isConnected ? (connStatus === 'synced' ? 'SINKRONASI AKTIF' : 'MENYINKRONKAN...') : pollSyncActive ? 'MODE POLLING AKTIF' : connStatus === 'connecting' ? 'MENYAMBUNGKAN...' : 'Gagal Konek (Klik Reconnect)'}
-                    </span>
-                  </div>
-
-                  {/* Presence avatars */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex -space-x-1.5 overflow-hidden">
-                      {activeUsers.map((u) => (
-                        <motion.div 
-                          initial={{ scale: 0, x: 20 }}
-                          animate={{ scale: 1, x: 0 }}
-                          key={u.clientId} 
-                          className="w-7 h-7 md:w-9 md:h-9 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-black text-white shadow-md transition-all group relative shrink-0"
-                          style={{ backgroundColor: u.color, zIndex: u.isTyping ? 10 : 1 }}
-                        >
-                          {u.name.charAt(0).toUpperCase()}
-                          {u.isTyping && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center">
-                              <span className="flex gap-[1px]">
-                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                <span className="w-[2px] h-[2px] bg-white rounded-full animate-bounce"></span>
-                              </span>
-                            </div>
-                          )}
-                          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900/90 text-white text-[8px] rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-50 backdrop-blur-sm border border-white/10">
-                            {u.name} {u.isTyping ? '(Sedang mengetik...)' : ''}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                    {activeUsers.some(u => u.isTyping && u.name !== user?.displayName) && (
-                      <motion.span 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-[9px] font-bold text-blue-500 flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-full border border-blue-100 dark:border-blue-900/30 hidden md:flex"
-                      >
-                        <div className="flex gap-0.5">
-                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                          <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" />
-                        </div>
-                        {activeUsers.find(u => u.isTyping && u.name !== user?.displayName)?.name} sedang menulis...
-                      </motion.span>
-                    )}
-                  </div>
-
+                <div className="flex items-center gap-3">
                   <select 
                     value={newNote.tag}
                     onChange={e => {
@@ -1012,36 +941,107 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                         updateDoc(doc(db, 'notes', editingId), { tag, updatedAt: Timestamp.now() });
                       }
                     }}
-                    className="px-2 md:px-3 py-1.5 text-[8px] md:text-[9px] font-black uppercase tracking-widest rounded-lg bg-gray-100 dark:bg-gray-800 border-none outline-none focus:ring-1 focus:ring-blue-500/20 text-gray-500"
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 border border-blue-100 dark:border-blue-900/30 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer"
                   >
-                    <option value="Rapat">Rapat</option>
-                    <option value="Materi">Materi</option>
+                    <option value="Rapat">Meeting</option>
+                    <option value="Materi">Material</option>
                     <option value="Memo">Memo</option>
-                    <option value="Umum">Umum</option>
+                    <option value="Umum">General</option>
                   </select>
                 </div>
               </div>
 
-            {/* Toolbar */}
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-            {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
-              <MenuBar 
-                editor={editor} 
-                onAddImage={() => setShowImageModal(true)} 
-                onOpenHistory={() => {
-                  fetchNoteHistory();
-                  setShowHistory(true);
-                }}
-              />
-            ) : (
-              <div className="h-[48px] bg-gray-50/50 dark:bg-gray-900/50 flex items-center px-4 gap-2 border-b border-gray-100 dark:border-gray-800">
-                <Loader2 size={14} className="animate-spin text-blue-500" />
-                <span className="text-[10px] font-bold text-gray-400">Menunggu Sinkronisasi Tiptap...</span>
-              </div>
-            )}
+            {/* Toolbar - Sticky like Google Docs */}
+            <div className="sticky top-0 z-[100] bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm transition-all print:hidden">
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+              {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
+                <MenuBar 
+                  editor={editor} 
+                  onAddImage={() => setShowImageModal(true)} 
+                  onOpenHistory={() => {
+                    fetchNoteHistory();
+                    setShowHistory(true);
+                  }}
+                />
+              ) : (
+                <div className="h-[52px] flex items-center px-8 gap-4 overflow-hidden">
+                  <div className="flex gap-2.5">
+                    {[1,2,3,4,5,6].map(i => (
+                      <div key={i} className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" style={{ animationDelay: `${i * 100}ms` }} />
+                    ))}
+                  </div>
+                  <div className="h-5 w-px bg-gray-200 dark:bg-gray-800" />
+                  <div className="flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin text-blue-500 opacity-60" />
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Establishing Connection...</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Secondary Info Bar (Compact & Subtle) */}
+              <div className="flex items-center justify-between px-8 py-2 bg-gray-50/50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5">
+                <div className="flex items-center gap-5">
+                  <div className="flex items-center gap-2">
+                    {saveStatus === 'saving' ? (
+                      <div className="flex items-center gap-1.5 text-blue-500 animate-pulse">
+                        <CloudUpload size={12} strokeWidth={2.5} />
+                        <span className="text-[9px] font-black uppercase tracking-tighter">Saving...</span>
+                      </div>
+                    ) : saveStatus === 'saved' ? (
+                      <div className="flex items-center gap-1.5 text-green-500/80">
+                        <CheckCircle2 size={12} strokeWidth={2.5} />
+                        <span className="text-[9px] font-black uppercase tracking-tighter">Saved</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-gray-400">
+                        <FileCheck size={12} strokeWidth={2.5} />
+                        <span className="text-[9px] font-black uppercase tracking-tighter">Ready</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="h-3 w-px bg-gray-200 dark:bg-gray-800" />
+                  {editor && (
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter opacity-60 hover:opacity-100 transition-opacity">
+                        {editor.getText().trim().split(/\s+/).filter(word => word !== "").length} Words
+                      </span>
+                  )}
+                  <div className="h-3 w-px bg-gray-200 dark:bg-gray-800" />
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : pollSyncActive ? 'bg-amber-400' : 'bg-red-400'} animate-pulse`} />
+                    <span className={`text-[9px] font-black uppercase tracking-tighter ${isConnected ? 'text-green-600 dark:text-green-400' : pollSyncActive ? 'text-amber-600' : 'text-red-500'}`}>
+                      {isConnected ? 'Live Sync' : pollSyncActive ? 'Cloud Polling' : 'Disconnected'}
+                    </span>
+                  </div>
+                </div>
 
-              {/* Editor Area */}
-              <div key={editingId || 'no-editor'} className="max-h-[650px] overflow-y-auto custom-scrollbar bg-white dark:bg-transparent relative">
+                {activeUsers.length > 0 && (
+                  <div className="flex items-center -space-x-2">
+                    {activeUsers.slice(0, 3).map((u, i) => (
+                      <div 
+                        key={i} 
+                        title={`${u.name} ${u.isTyping ? '(Typing...)' : ''}`}
+                        className="w-6 h-6 rounded-full ring-2 ring-white dark:ring-gray-900 flex items-center justify-center text-[8px] font-black text-white relative transition-transform hover:scale-110 hover:z-10 shadow-sm"
+                        style={{ backgroundColor: u.color }}
+                      >
+                        {u.name?.[0]?.toUpperCase()}
+                        {u.isTyping && (
+                          <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-blue-500 border-2 border-white dark:border-gray-900 rounded-full animate-bounce" />
+                        )}
+                      </div>
+                    ))}
+                    {activeUsers.length > 3 && (
+                      <div className="w-6 h-6 rounded-full ring-2 ring-white dark:ring-gray-900 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-[8px] font-black text-gray-400">
+                        +{activeUsers.length - 3}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Document Content Background */}
+            <div className="flex-1 overflow-y-auto bg-gray-100/50 dark:bg-gray-900/30 custom-scrollbar scroll-smooth">
+              <div key={editingId || 'no-editor'} className="relative">
                 <AnimatePresence>
                   {showHistory && (
                       <motion.div 
@@ -1150,17 +1150,41 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   )}
                 </AnimatePresence>
 
-                <div key={`editor-content-${editingId}`} className="editor-content-container">
-                  {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
-                    <EditorContent editor={editor} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-32 gap-4 bg-gray-50/30 dark:bg-gray-900/10 rounded-2xl">
-                      <Loader2 size={32} className="animate-spin text-blue-500 opacity-50" />
-                      <p className="text-[10px] font-black font-mono tracking-widest uppercase text-gray-400">Synchronizing Session...</p>
-                    </div>
-                  )}
+                <div key={`editor-content-${editingId}`} className="editor-content-container relative">
+                  {/* Document Page Simulation */}
+                  <div className="max-w-[850px] mx-auto my-8 bg-white dark:bg-gray-950 shadow-2xl rounded-sm min-h-[1056px] relative p-12 md:p-16 border border-gray-100 dark:border-gray-800">
+                    {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
+                      <EditorContent editor={editor} />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-64 gap-6">
+                        <div className="relative">
+                          <Loader2 size={48} className="animate-spin text-blue-600/30" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <FileEdit size={20} className="text-blue-500 animate-pulse" />
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <p className="text-[11px] font-black font-mono tracking-[0.2em] uppercase text-blue-600 dark:text-blue-400">
+                            {pollSyncActive ? 'Activating Cloud Sync...' : 'Synchronizing Canvas...'}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-medium italic">
+                            Preparing your collaborative workspace
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Collaborative Cursors / Presence indicators for polling mode */}
+                    {pollSyncActive && !isConnected && (
+                       <div className="absolute top-4 right-8 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity">
+                         <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                         <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Polling Sync Active</span>
+                       </div>
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
           </div>
         ) : selectedNote ? (
           <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl relative group overflow-hidden flex flex-col animate-in fade-in duration-500">
