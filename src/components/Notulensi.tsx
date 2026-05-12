@@ -635,7 +635,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
   const editor = useEditor({
     extensions,
-    content: yDoc ? undefined : (notes.find(n => n.id === editingId)?.htmlContent) || '',
+    content: (notes.find(n => n.id === editingId)?.htmlContent) || (selectedNote?.htmlContent) || '',
     editable: !selectedNote?.isLocked || isAdmin,
     immediatelyRender: false,
     editorProps: {
@@ -807,16 +807,16 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           } catch (e) {}
         }
         typingTimeout.current = undefined;
-      }, 800);
+      }, 2500);
 
       setSaveStatus('saving');
       if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
       
-      // Much faster sync in polling mode to feel "live" (800ms vs 3000ms)
-      const debounceTime = pollSyncActive && !isConnected ? 800 : 3000;
+      // Much faster sync in polling mode to feel "live" (1.5s vs 3s)
+      const debounceTime = pollSyncActive && !isConnected ? 1500 : 3000;
       
       autoSaveTimeout.current = setTimeout(async () => {
-        if (!editor || editor.isDestroyed || !editor.extensionManager) {
+        if (!editor || editor.isDestroyed || !editor.extensionManager || !editingId) {
           setSaveStatus('idle');
           return;
         }
@@ -825,19 +825,25 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           const html = editor.getHTML();
           const text = editor.getText();
           
+          // Guard: Don't overwrite with empty if we had content (safety check)
+          if ((html === '' || html === '<p></p>') && text.length === 0) {
+            // If it's truly empty, maybe let it be, but log it
+            console.warn('[Auto-save] Attempting to save empty content');
+          }
+          
           await updateDoc(doc(db, 'notes', editingId), {
             content: text.substring(0, 200),
             htmlContent: html,
-            updatedAt: Timestamp.now(),
-            updatedBy: user?.uid
+            updatedAt: serverTimestamp(),
+            updatedBy: user?.uid || 'unknown'
           });
           
           saveHistorySnapshot();
           setSaveStatus('saved');
           setLastSavedAt(new Date());
           setTimeout(() => {
-            if (setSaveStatus) setSaveStatus(prev => prev === 'saved' ? 'idle' : prev);
-          }, 3000);
+            setSaveStatus(prev => prev === 'saved' ? 'idle' : prev);
+          }, 2000);
         } catch (e) {
           console.error('Auto-save error:', e);
           setSaveStatus('idle');
@@ -975,8 +981,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           tag: tag,
           content: text.substring(0, 200),
           htmlContent: html,
-          updatedAt: Timestamp.now(),
-          updatedBy: user?.uid
+          updatedAt: serverTimestamp(),
+          updatedBy: user?.uid || 'unknown'
         });
 
         setLastSavedAt(new Date());
