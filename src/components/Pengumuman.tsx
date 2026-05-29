@@ -39,7 +39,10 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
   }, []);
 
   const addAnnouncement = async () => {
-    if (!user) return alert('Silakan login dulu');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (!form.title.trim()) return alert('Judul tidak boleh kosong');
     if (!form.content.trim()) return alert('Isi pengumuman tidak boleh kosong');
     
@@ -76,11 +79,17 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
   };
 
   const deleteAnnouncement = async (id: string) => {
-    if (!user) return alert('Silakan login dulu');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     const ann = announcements.find(a => a.id === id);
     if (!ann) return;
 
-    if (!isAdmin && ann.authorId !== user.uid) return alert('Anda hanya bisa menghapus pengumuman buatan sendiri!');
+    if (!isAdmin && ann.authorId !== user.uid) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'announcements', id));
       setConfirmId(null);

@@ -948,13 +948,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   }, []);
 
   const handleAction = (type: 'delete' | 'edit', id: string) => {
-    if (!user) return alert('Login Google dulu');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     
     const n = notes.find(note => note.id === id);
     if (!n) return;
 
     if (n.isLocked && !isAdmin) {
-      return alert('Catatan ini telah dikunci oleh Admin. Anda tidak dapat mengubah atau menghapusnya.');
+      (window as any).showAuthError?.('unauthorized');
+      return;
     }
 
     // REMOVED author-only restriction to allow universal editing as requested
@@ -1065,7 +1069,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   };
 
   const deleteNote = async (id: string) => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menghapus catatan!');
+    if (!isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     try {
       console.log("Attempting to delete note:", id);
       await deleteDoc(doc(db, 'notes', id));
@@ -1110,7 +1117,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
         <button 
           onClick={() => {
-            if (!user) return alert('Silakan Login Google dulu');
+            if (!user) {
+              (window as any).showAuthError?.('unauthenticated');
+              return;
+            }
             addNote();
           }}
           className="w-full py-3.5 bg-blue-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50"

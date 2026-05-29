@@ -123,7 +123,10 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   }, [activeTableId]);
 
   const createTable = async () => {
-    if (!user) return alert('Anda harus Login Google terlebih dahulu untuk bisa menyimpan data!');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (!newTableName.trim()) return alert('Nama tabel tidak boleh kosong!');
 
     setLoading(true);
@@ -160,7 +163,10 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const deleteTable = async () => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menghapus tabel!');
+    if (!isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     if (!activeTableId) return;
     
     setLoading(true);
@@ -192,7 +198,10 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   const deleteRow = async (rowId: string) => {
     const table = tables.find(t => t.id === activeTableId);
-    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     
     try {
       await deleteDoc(doc(db, 'absenTables', activeTableId, 'rows', rowId));
@@ -206,8 +215,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   const addRow = async () => {
     const table = tables.find(t => t.id === activeTableId);
-    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
-    if (!user) return alert('Login Google dulu!');
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (!newRowName || !activeTableId) return;
     try {
       await addDoc(collection(db, 'absenTables', activeTableId, 'rows'), {
@@ -224,8 +239,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   const addClassRows = async () => {
     const table = tables.find(t => t.id === activeTableId);
-    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
-    if (!user) return alert('Login Google dulu!');
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (!activeTableId) return;
     const names = [
       'Bhintank Mi\'thori Danial Firdaus', 'Dimas Ardiansyah Nur Ismail', 'Fatin Atikah Sandy', 
@@ -258,8 +279,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   const toggleCheck = async (rowId: string, colId: string, currentVal: boolean) => {
     const table = tables.find(t => t.id === activeTableId);
-    if (table?.isLocked && !isAdmin) return alert('Tabel ini telah dikunci oleh Admin.');
-    if (!user) return alert('Login Google untuk mengisi data.');
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     
     try {
       await updateDoc(doc(db, 'absenTables', activeTableId, 'rows', rowId), {
@@ -285,8 +312,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
 
   const addColumn = async () => {
     const table = tables.find(t => t.id === activeTableId);
-    if (table?.isLocked && !isAdmin) return alert('Tabel dikunci admin!');
-    if (!user) return alert('Login Google dulu!');
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (!newColumnLabel.trim() || !activeTableId) return;
     try {
       await addDoc(collection(db, 'absenTables', activeTableId, 'cols'), {

@@ -64,7 +64,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
 
   const handleAction = (type: 'delete', id: string) => {
     if (!user) {
-      alert('Login Google dulu!');
+      (window as any).showAuthError?.('unauthenticated');
       return;
     }
     setConfirmId(id);
@@ -100,7 +100,10 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
   };
 
   const handleVote = async (pollId: string, optionId: string) => {
-    if (!user) return alert('Silakan Login Google dulu untuk memilih!');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     if (hasVoted[pollId]) return;
     
     try {
@@ -119,7 +122,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
 
   const deletePoll = async (id: string) => {
     if (!isAdmin) {
-      alert('Fitur ini hanya untuk Admin. Silakan login admin di header.');
+      (window as any).showAuthError?.('unauthorized');
       setConfirmId(null);
       return;
     }

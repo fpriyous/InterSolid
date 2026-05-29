@@ -108,6 +108,16 @@ export default function App() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [notification, setNotification] = useState<{ id: string, message: string, type?: string } | null>(null);
+  const [authError, setAuthError] = useState<'unauthenticated' | 'unauthorized' | null>(null);
+
+  useEffect(() => {
+    (window as any).showAuthError = (type: 'unauthenticated' | 'unauthorized') => {
+      setAuthError(type);
+    };
+    return () => {
+      delete (window as any).showAuthError;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('isAdmin', isAdmin.toString());
@@ -644,6 +654,95 @@ export default function App() {
                   Konfirmasi PIN
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Beautiful Custom Auth/Permission Error Popup */}
+      <AnimatePresence>
+        {authError && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAuthError(null)}
+              className="absolute inset-0 bg-black/70 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-sm rounded-[32px] p-8 shadow-2xl border border-red-100 dark:border-red-900/30 overflow-hidden text-center z-10"
+            >
+              {authError === 'unauthenticated' ? (
+                <>
+                  <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-6 shadow-lg shadow-blue-500/10">
+                    <UserIcon size={32} className="animate-pulse" />
+                  </div>
+                  <h3 className="font-serif text-2xl font-bold mb-2">Login Terlebih Dahulu</h3>
+                  <p className="text-[10px] uppercase tracking-widest text-[#9aaabb] font-black mb-4">AUTHENTICATION_REQUIRED</p>
+                  
+                  {/* Highlighted exact quote requested by user */}
+                  <div className="my-6 p-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-2xl border border-blue-100 dark:border-blue-900/20">
+                    <p className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                      "login dulu ea"
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => {
+                        setAuthError(null);
+                        handleLogin();
+                      }}
+                      className="w-full py-4 bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                      <UserIcon size={16} /> Login Google Sekarang
+                    </button>
+                    <button 
+                      onClick={() => setAuthError(null)}
+                      className="w-full py-3.5 bg-gray-50 dark:bg-gray-800 text-[#6b7d91] dark:text-gray-400 rounded-2xl text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center text-red-500 mx-auto mb-6 shadow-lg shadow-red-500/10">
+                    <ShieldAlert size={32} className="animate-bounce" />
+                  </div>
+                  <h3 className="font-serif text-2xl font-bold mb-2">Akses Ditolak</h3>
+                  <p className="text-[10px] uppercase tracking-widest text-[#9aaabb] font-black mb-4">ADMINISTRATOR_ONLY</p>
+                  
+                  {/* Highlighted exact quote requested by user */}
+                  <div className="my-6 p-4 bg-red-50/50 dark:bg-red-950/20 rounded-2xl border border-red-100/50 dark:border-red-900/20">
+                    <p className="font-serif text-sm font-semibold text-red-600 dark:text-red-400 leading-relaxed italic">
+                      "aku admin, kamu hitam. mintol si admin hitam sana"
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => {
+                        setAuthError(null);
+                        setShowPinModal(true);
+                      }}
+                      className="w-full py-4 bg-red-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                      <ShieldCheck size={16} /> Aktifkan Kunci Admin
+                    </button>
+                    <button 
+                      onClick={() => setAuthError(null)}
+                      className="w-full py-3.5 bg-gray-50 dark:bg-gray-800 text-[#6b7d91] dark:text-gray-400 rounded-2xl text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
+              )}
             </motion.div>
           </div>
         )}

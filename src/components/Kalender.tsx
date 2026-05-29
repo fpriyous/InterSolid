@@ -89,7 +89,11 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
   const prevMonthDays = new Date(year, month, 0).getDate();
   
   const handleAddEvent = async () => {
-    if (!user || !form.title) return;
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
+    if (!form.title) return;
     try {
       if (editingId) {
         await updateDoc(doc(db, 'events', editingId), {
@@ -122,7 +126,10 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
   };
 
   const deleteEvent = async (id: string) => {
-    if (!isAdmin) return alert('Hanya admin yang bisa menghapus jadwal!');
+    if (!isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'events', id));
       setConfirmId(null);

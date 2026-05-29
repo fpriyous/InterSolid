@@ -77,7 +77,10 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
   };
 
   const reactToMessage = async (m: AspirasiMessage, emoji: string) => {
-    if (!user) return alert('Silakan login untuk memberikan reaksi.');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     try {
       const uid = user.uid;
       const oldEmoji = m.userReactions?.[uid];
@@ -110,7 +113,10 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
   };
 
   const likeMessage = async (m: AspirasiMessage) => {
-    if (!user) return alert('Silakan login untuk menyukai pesan.');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     try {
       const uid = user.uid;
       const isLiked = m.likedBy?.includes(uid);
@@ -126,7 +132,10 @@ export default function Aspirasi({ isAdmin, isDewa, user }: { isAdmin: boolean, 
   };
 
   const deleteMessage = async (m: AspirasiMessage) => {
-    if (!isAdmin && !isModerator) return alert('Hanya moderator/admin yang bisa menghapus aspirasi!');
+    if (!isAdmin && !isModerator) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'aspirasi', m.id));
       setConfirmMsg(null);

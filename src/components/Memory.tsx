@@ -639,7 +639,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   };
 
   const toggleReaction = async (memory: MemoryItem, emoji: string) => {
-    if (!user) return alert('Silakan login untuk bereaksi!');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     
     // Optimistic Update
     const currentReactions = memory.reactions || {};
@@ -672,7 +675,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   };
 
   const toggleLike = async (memory: MemoryItem) => {
-    if (!user) return alert('Silakan login untuk memberikan like!');
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     
     // Optimistic Update
     const hasLiked = memory.likes?.includes(user.uid);
