@@ -309,6 +309,26 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [loading, setLoading] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => {
+      const mobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(mobileUA || window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Add stable user color based on UID
+  const userColor = useMemo(() => {
+    if (!user) return '#3b82f6';
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    const index = user.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    return colors[index];
+  }, [user?.uid]);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
   const [connStatus, setConnStatus] = useState<string>('connecting');
   const [pollSyncActive, setPollSyncActive] = useState(false);
@@ -364,83 +384,6 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [saveStatus]);
-
-  // Cloud Awareness (Presence tracking for Polling Mode)
-  useEffect(() => {
-    if (!editingId || !user || !isAdding) return;
-
-    // Heartbeat: Tell others we are viewing
-    const presenceDoc = doc(db, 'note_presence', `${editingId}_${user.uid}`);
-    
-    const updatePresence = async (isTyping = false, cursorIndex = 0) => {
-      try {
-        await setDoc(presenceDoc, {
-          uid: user.uid,
-          noteId: editingId,
-          name: user.displayName || 'Pengguna',
-          photo: user.photoURL,
-          color: userColor,
-          lastSeen: serverTimestamp(),
-          isTyping,
-          cursorIndex
-        }, { merge: true });
-      } catch (e) {
-        // Silently fail heartbeats
-      }
-    };
-
-    const heartbeat = setInterval(() => {
-      const pos = editor?.state.selection.from || 0;
-      updatePresence(!!typingTimeout.current, pos);
-    }, 2500); // More frequent heartbeats
-    updatePresence(false, 0);
-
-    // Listen to others in this specific note
-    const q = query(
-      collection(db, 'note_presence'), 
-      where('noteId', '==', editingId)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const users: any[] = [];
-      const now = Date.now();
-      
-      snap.forEach(d => {
-        const data = d.data();
-        const lastSeen = data.lastSeen?.toMillis() || 0;
-        
-        // Only include users seen in the last 20 seconds
-        if (data.uid !== user.uid && (now - lastSeen < 20000)) {
-           users.push({
-             clientId: d.id,
-             name: data.name,
-             color: data.color,
-             isTyping: data.isTyping,
-             photo: data.photo,
-             uid: data.uid,
-             cursorIndex: data.cursorIndex || 0
-           });
-        }
-      });
-      
-      // If we are connected via Yjs, Yjs handles awareness. 
-      // If not, we use this Firestore-based awareness.
-      if (!isConnectedRef.current) {
-        setActiveUsers(users);
-      }
-    }, (error) => {
-      console.warn('[Presence] Snapshot error:', error);
-    });
-
-    return () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      // Only delete if we are actually exiting the doc
-      setTimeout(() => {
-        deleteDoc(presenceDoc).catch(() => {});
-      }, 2000);
-    }
-  }, [editingId, user?.uid, isAdding]);
 
   // Handle Yjs and Websocket initialization
   useEffect(() => {
@@ -585,14 +528,6 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     };
   }, [editingId, isAdding, user?.uid]); // Stability: only re-init if editing target or user ID changes
 
-  // Add stable user color based on UID
-  const userColor = useMemo(() => {
-    if (!user) return '#3b82f6';
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-    const index = user.uid.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
-    return colors[index];
-  }, [user?.uid]);
-
   const extensions = useMemo(() => [
     StarterKit.configure({
       history: yDoc ? false : {}, 
@@ -649,6 +584,21 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   }, [extensions, editingId]); 
 
+  // Seed/Load Initial Content - Critical Fix for data loss on reload
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || !editingId || !isAdding) return;
+    
+    // If editor is currently empty, try to load content from the notes list
+    // This handles the case where note loads AFTER editor initialization
+    const note = notes.find(n => n.id === editingId) || selectedNote;
+    const currentHtml = editor.getHTML();
+    
+    if ((currentHtml === '' || currentHtml === '<p></p>') && note?.htmlContent && note.htmlContent !== '<p></p>') {
+      console.log('[Editor] Seeding content from notes list lookup');
+      editor.commands.setContent(note.htmlContent, false);
+    }
+  }, [notes, editingId, isAdding, editor]);
+
   // Seed Yjs content from Firestore if Yjs is empty
   useEffect(() => {
     if (!yDoc || !provider || !editor || editor.isDestroyed || !editingId || !isAdding) return;
@@ -692,8 +642,13 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       const remoteHtml = data.htmlContent || '';
       const localHtml = editor.getHTML();
       
-      if (!typingTimeout.current && remoteHtml !== localHtml && data.updatedBy !== user?.uid) {
+      // Strict Check: Only sync if we aren't typing AND the remote data is different AND it's from a different user
+      // Or if the remote data is from us but we just refreshed (local is empty)
+      const isRemoteNewer = data.updatedBy !== user?.uid || (localHtml === '' || localHtml === '<p></p>');
+
+      if (!typingTimeout.current && remoteHtml !== localHtml && isRemoteNewer) {
         if (remoteHtml === '' || remoteHtml === '<p></p>') {
+            // Safety: don't overwrite local content with remote empty content if local has content
             if (localHtml.length > 20) return; 
         }
         
@@ -725,6 +680,105 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
     return () => unsubscribe();
   }, [pollSyncActive, editingId, editor, isConnected, user?.uid]);
+
+  // Cloud Awareness (Presence tracking for Polling Mode)
+  useEffect(() => {
+    if (!editingId || !user || !isAdding) return;
+
+    // Heartbeat: Tell others we are viewing
+    const presenceDoc = doc(db, 'note_presence', `${editingId}_${user.uid}`);
+    
+    // Optimizations to avoid spamming database on every keypress or minor state change
+    const lastWrite = {
+      time: 0,
+      isTyping: false,
+      cursorIndex: -1
+    };
+    
+    const updatePresence = async (isTyping = false, cursorIndex = 0) => {
+      const now = Date.now();
+      
+      // If typing state and cursor didn't change, only update every 10s (mobile) or 6s (desktop)
+      if (
+        isTyping === lastWrite.isTyping &&
+        cursorIndex === lastWrite.cursorIndex &&
+        (now - lastWrite.time < (isMobile ? 10000 : 6000))
+      ) {
+        return; 
+      }
+      
+      lastWrite.time = now;
+      lastWrite.isTyping = isTyping;
+      lastWrite.cursorIndex = cursorIndex;
+
+      try {
+        await setDoc(presenceDoc, {
+          uid: user.uid,
+          noteId: editingId,
+          name: user.displayName || 'Pengguna',
+          photo: user.photoURL,
+          color: userColor,
+          lastSeen: Timestamp.now(), // Avoid serverTimestamp double trigger latency repaint
+          isTyping,
+          cursorIndex
+        }, { merge: true });
+      } catch (e) {
+        // Silently fail heartbeats
+      }
+    };
+
+    const heartbeat = setInterval(() => {
+      const pos = editor?.state.selection.from || 0;
+      updatePresence(!!typingTimeout.current, pos);
+    }, isMobile ? 4000 : 1500); // Dynamic frequency based on device
+    updatePresence(false, 0);
+
+    // Listen to others in this specific note
+    const q = query(
+      collection(db, 'note_presence'), 
+      where('noteId', '==', editingId)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const users: any[] = [];
+      const now = Date.now();
+      
+      snap.forEach(d => {
+        const data = d.data();
+        const lastSeen = data.lastSeen?.toMillis() || 0;
+        const presenceTimeout = isMobile ? 35000 : 20000; // Permissive checkout
+        
+        if (data.uid !== user.uid && (now - lastSeen < presenceTimeout)) {
+           users.push({
+             clientId: data.uid, // Use UID from data for stability
+             name: data.name,
+             color: data.color,
+             isTyping: data.isTyping,
+             photo: data.photo,
+             uid: data.uid,
+             cursorIndex: data.cursorIndex || 0
+           });
+        }
+      });
+      
+      // If we are connected via Yjs, Yjs handles awareness. 
+      // If not, we use this Firestore-based awareness.
+      if (!isConnectedRef.current) {
+        setActiveUsers(users);
+      }
+    }, (error) => {
+      console.warn('[Presence] Snapshot error:', error);
+    });
+
+    return () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      // Only delete if we are actually exiting the doc
+      setTimeout(() => {
+        deleteDoc(presenceDoc).catch(() => {});
+      }, 2000);
+    }
+  }, [editingId, user?.uid, isAdding, isMobile, editor]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -812,8 +866,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setSaveStatus('saving');
       if (autoSaveTimeout.current) clearTimeout(autoSaveTimeout.current);
       
-      // Much faster sync in polling mode to feel "live" (1.5s vs 3s)
-      const debounceTime = pollSyncActive && !isConnected ? 1500 : 3000;
+      // Much faster sync in polling mode to feel "live" (1s vs 3s)
+      const debounceTime = pollSyncActive && !isConnected ? 1000 : 2500;
       
       autoSaveTimeout.current = setTimeout(async () => {
         if (!editor || editor.isDestroyed || !editor.extensionManager || !editingId) {
@@ -825,18 +879,19 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           const html = editor.getHTML();
           const text = editor.getText();
           
-          // Guard: Don't overwrite with empty if we had content (safety check)
           if ((html === '' || html === '<p></p>') && text.length === 0) {
-            // If it's truly empty, maybe let it be, but log it
-            console.warn('[Auto-save] Attempting to save empty content');
+            console.warn('[Auto-save] Skipping save of empty content to prevent accidental wipe');
+            setSaveStatus('idle');
+            return;
           }
           
-          await updateDoc(doc(db, 'notes', editingId), {
+          // Use a batch or a set of fields
+          await setDoc(doc(db, 'notes', editingId), {
             content: text.substring(0, 200),
             htmlContent: html,
             updatedAt: serverTimestamp(),
             updatedBy: user?.uid || 'unknown'
-          });
+          }, { merge: true });
           
           saveHistorySnapshot();
           setSaveStatus('saved');
@@ -975,15 +1030,15 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       setSaveStatus('saving');
       
       try {
-        // Final save for everything
-        await updateDoc(doc(db, 'notes', editingId), {
+        // Final save for everything - use setDoc with merge for maximum safety
+        await setDoc(doc(db, 'notes', editingId), {
           title: title,
           tag: tag,
           content: text.substring(0, 200),
           htmlContent: html,
           updatedAt: serverTimestamp(),
           updatedBy: user?.uid || 'unknown'
-        });
+        }, { merge: true });
 
         setLastSavedAt(new Date());
 
@@ -1477,8 +1532,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       </div>
                     </div>
 
-                    {/* Manual Collaboration Cursors for Polling Mode */}
-                    {pollSyncActive && !isConnected && editor && (
+                    {/* Manual Collaboration Cursors for Polling Mode - Disabled on Mobile for absolute performance stability */}
+                    {pollSyncActive && !isConnected && editor && !isMobile && (
                       <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
                         {activeUsers.filter(u => u.cursorIndex !== undefined).map((u) => {
                           try {
