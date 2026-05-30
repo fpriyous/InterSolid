@@ -97,7 +97,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       },
       (error) => {
         console.error("Absen cols listener error:", error);
-        alert("Gagal memuat kolom: " + error.message);
+        (window as any).showAppAlert?.('Connection Failed', 'Failed to load columns list from database: ' + error.message, 'error');
       }
     );
 
@@ -111,7 +111,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       },
       (error) => {
         console.error("Absen rows listener error:", error);
-        alert("Gagal memuat baris: " + error.message);
+        (window as any).showAppAlert?.('Connection Failed', 'Failed to load attendance rows data: ' + error.message, 'error');
         setLoading(false);
       }
     );
@@ -127,7 +127,10 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       (window as any).showAuthError?.('unauthenticated');
       return;
     }
-    if (!newTableName.trim()) return alert('Nama tabel tidak boleh kosong!');
+    if (!newTableName.trim()) {
+      (window as any).showAppAlert?.('Input Kosong', 'Nama tabel tidak boleh dikosongkan!', 'info');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -144,7 +147,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       setNewTableName('');
     } catch (e: any) {
       console.error("Error creating table:", e);
-      alert('Gagal membuat tabel: ' + (e.message || e.toString()));
+      (window as any).showAppAlert?.('Failed', 'Failed to create new admin table: ' + (e.message || e.toString()), 'error');
     } finally {
       setLoading(false);
     }
@@ -158,7 +161,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       });
     } catch (e: any) {
       handleFirestoreError(e, OperationType.UPDATE, `absenTables/${tableId}`);
-      alert('Gagal mengubah status kunci: ' + e.message);
+      (window as any).showAppAlert?.('Access Denied', 'Failed to change table lock state: ' + e.message, 'error');
     }
   };
 
@@ -189,7 +192,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       setConfirmDelete(null);
     } catch (e: any) {
       console.error("Delete table error:", e);
-      alert('Gagal menghapus tabel: ' + (e.message || e.toString()));
+      (window as any).showAppAlert?.('Delete Failed', 'Failed to delete table from system: ' + (e.message || e.toString()), 'error');
       setConfirmDelete(null);
     } finally {
       setLoading(false);
@@ -208,7 +211,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       setConfirmDelete(null);
     } catch (e: any) {
       console.error("Delete row error:", e);
-      alert("Gagal menghapus baris: " + e.message);
+      (window as any).showAppAlert?.('Delete Failed', 'Failed to delete row data: ' + e.message, 'error');
       setConfirmDelete(null);
     }
   };
@@ -233,7 +236,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       });
       setNewRowName('');
     } catch (e: any) {
-      alert('Gagal menambah baris: ' + e.message);
+      (window as any).showAppAlert?.('Add Failed', 'Failed to add new row to table: ' + e.message, 'error');
     }
   };
 
@@ -306,7 +309,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
     } catch (e: any) {
       console.error("Error updating check:", e);
       handleFirestoreError(e, OperationType.UPDATE, `absenTables/${activeTableId}/rows/${rowId}`);
-      alert("Gagal mengupdate data: " + (e.message || e.toString()));
+      (window as any).showAppAlert?.('Save Failed', 'Failed to update checklist data: ' + (e.message || e.toString()), 'error');
     }
   };
 
@@ -329,7 +332,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       setIsAddingColumn(false);
       setNewColumnLabel('');
     } catch (e: any) {
-      alert('Gagal menambah kolom: ' + e.message);
+      (window as any).showAppAlert?.('Column Failed', 'Failed to create new column on table: ' + e.message, 'error');
     }
   };
 
@@ -369,8 +372,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="font-serif text-3xl md:text-4xl font-bold mb-2">Daftar List</h2>
-          <p className="text-xs md:text-sm text-gray-400">Buat tabel custom untuk absensi, pembayaran, atau ceklis apapun</p>
+          <h2 className="font-serif text-3xl md:text-4xl font-bold mb-2">Data Sheets</h2>
+          <p className="text-xs md:text-sm text-gray-400">Create custom tables for attendance, payments, or any check-off lists</p>
         </div>
       </div>
 
@@ -379,7 +382,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           onClick={() => setIsCreatingTable(true)}
           className="flex-1 md:flex-none px-6 py-3 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
         >
-          <Plus size={14}/> Tabel Baru
+          <Plus size={14}/> New Table
         </button>
         
         <div className="relative flex-1 md:max-w-xs">
@@ -388,7 +391,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
             onChange={e => setActiveTableId(e.target.value)}
             className="w-full px-6 py-3 text-xs rounded-xl border border-gray-200 dark:border-blue-900/30 bg-white dark:bg-[#1a252f] outline-none appearance-none font-bold pr-10 shadow-sm"
           >
-            <option value="">— Pilih Tabel —</option>
+            <option value="">— Select Table —</option>
             {tables.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
@@ -403,7 +406,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
             onClick={() => setConfirmDelete({ type: 'table' })}
             className="px-6 py-3 bg-white dark:bg-red-900/20 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors border border-red-50 dark:border-red-900/10"
           >
-            Hapus Tabel
+            Delete Table
           </button>
         )}
       </div>
@@ -411,11 +414,11 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       {isCreatingTable && (
         <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-gray-200 dark:border-blue-900/40 p-6 shadow-2xl shadow-gray-200 relative overflow-hidden animate-in fade-in slide-in-from-top-4">
           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-          <h4 className="font-serif text-lg font-bold mb-4">Buat Tabel Baru</h4>
+          <h4 className="font-serif text-lg font-bold mb-4">Create New Table</h4>
           <div className="flex gap-2">
             <input 
               type="text" 
-              placeholder="Masukkan nama tabel (contoh: Absensi Smt 1)..."
+              placeholder="Enter table name (e.g. Attendance Semester 1)..."
               value={newTableName}
               onChange={e => setNewTableName(e.target.value)}
               className="flex-1 px-4 py-2.5 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -425,13 +428,13 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               onClick={createTable}
               className="px-6 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20"
             >
-              Simpan
+              Save
             </button>
             <button 
               onClick={() => setIsCreatingTable(false)}
               className="px-6 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-xs font-bold"
             >
-              Batal
+              Cancel
             </button>
           </div>
         </div>
@@ -442,7 +445,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-wrap gap-4">
             <div className="flex-1">
               <h3 className="font-serif text-xl font-bold">{activeTable.name}</h3>
-              <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-widest">{rows.length} anggota · {cols.length} kolom</p>
+              <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold tracking-widest">{rows.length} members · {cols.length} columns</p>
               
               <div className="mt-4 flex flex-wrap gap-4">
                 {cols.map(c => {
@@ -557,7 +560,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           <div className="flex-1 flex gap-2">
             <input 
               type="text" 
-              placeholder="Tambahkan nama anggota baru..." 
+              placeholder="Add new member name..." 
               value={newRowName}
               onChange={e => setNewRowName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addRow()}
@@ -567,14 +570,14 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               onClick={addRow}
               className="px-6 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/10"
             >
-              Tambah
+              Add
             </button>
           </div>
           <button 
             onClick={addClassRows}
             className="px-6 py-2.5 bg-white dark:bg-gray-800 text-blue-500 border border-blue-100 dark:border-blue-900/40 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all whitespace-nowrap flex items-center justify-center gap-2"
           >
-            <Plus size={14} /> Isi Nama Sekelas
+            <Plus size={14} /> Fill All Classmates
           </button>
         </div>
       )}
@@ -584,7 +587,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-serif text-2xl font-bold flex items-center gap-3">
               <div className="w-1.5 h-8 bg-blue-500 rounded-full" />
-              Lemari Tabel <span className="text-sm font-sans font-normal text-gray-400">({tables.length} arsip)</span>
+              Table Cabinets <span className="text-sm font-sans font-normal text-gray-400">({tables.length} archives)</span>
             </h3>
           </div>
           
@@ -615,7 +618,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                     
                     <div className="flex items-center justify-between pt-6 border-t border-gray-50 dark:border-gray-800">
                        <span className="text-[9px] font-black uppercase text-blue-500 tracking-tighter flex items-center gap-1">
-                          Buka Tabel <Check size={10} strokeWidth={3} />
+                          Open Table <Check size={10} strokeWidth={3} />
                        </span>
                        <div className="w-8 h-8 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center text-gray-400 group-hover:bg-blue-500 group-hover:text-white transition-colors">
                           <ArrowRight size={14} />
@@ -633,7 +636,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                  <div className="w-12 h-12 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center text-gray-400 group-hover:bg-blue-500 group-hover:text-white mb-4 transition-all shadow-sm">
                    <Plus size={24} />
                  </div>
-                 <span className="text-xs font-black uppercase tracking-widest text-gray-400 group-hover:text-blue-500">Tambah Tabel</span>
+                 <span className="text-xs font-black uppercase tracking-widest text-gray-400 group-hover:text-blue-500">Add Table</span>
                </div>
              )}
           </div>
@@ -643,8 +646,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-blue-200 mb-6">
             <Table size={40} />
           </div>
-          <h3 className="font-serif text-2xl font-bold mb-2">Daftar List & Pendataan</h3>
-          <p className="text-sm text-gray-400 max-w-sm mb-8">Pilih tabel yang sudah ada atau buat tabel baru untuk mulai mengelola data anggota kelas.</p>
+          <h3 className="font-serif text-2xl font-bold mb-2">Custom Data Sheets</h3>
+          <p className="text-sm text-gray-400 max-w-sm mb-8">Select an existing table or create a new one to start managing class member data.</p>
           {!isAdmin ? (
             <div className="flex flex-col items-center gap-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold uppercase tracking-widest">
@@ -657,7 +660,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               onClick={() => setIsCreatingTable(true)}
               className="px-8 py-3 bg-blue-500 text-white rounded-2xl text-xs font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all font-sans uppercase tracking-widest"
             >
-              Buat Tabel Pertama Sekarang
+              Create First Table Now
             </button>
           )}
         </div>
@@ -686,8 +689,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
               <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
                 {confirmDelete.type === 'table' 
-                  ? 'Seluruh tabel dan data di dalamnya akan dihapus permanen' 
-                  : 'Baris anggota ini akan dihapus permanen'}
+                  ? 'The entire table and all underlying records will be permanently deleted' 
+                  : 'This member row will be permanently deleted'}
               </p>
               
               <div className="grid grid-cols-2 gap-3">

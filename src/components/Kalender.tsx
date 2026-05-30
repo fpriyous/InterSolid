@@ -135,7 +135,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
       setConfirmId(null);
     } catch (e: any) {
       console.error("Delete event error:", e);
-      alert('Gagal menghapus jadwal: ' + (e.message || "Izin ditolak"));
+      (window as any).showAppAlert?.('Failed', 'Failed to delete schedule: ' + (e.message || "Permission denied by database"), 'error');
       setConfirmId(null);
     }
   };
@@ -206,7 +206,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
           console.error('Calendar API Error Response:', err);
           if (err.error?.code === 401) {
             localStorage.removeItem('googleAccessToken');
-            if (!isAuto) alert('Sesi Google habis. Silakan Login ulang untuk sinkronisasi otomatis.');
+            if (!isAuto) (window as any).showAppAlert?.('Sesi Habis', 'Sesi Google Anda telah berakhir. Silakan lakukan login ulang untuk sinkronisasi otomatis.', 'info');
           } else {
             // Fallback to manual if silent fails
             if (!isAuto) {
@@ -218,7 +218,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
         }
       } catch (err) {
         console.error('Google Calendar API Error:', err);
-        if (!isAuto) alert('Gagal sinkronisasi otomatis. Coba hubungkan ulang Google Anda.');
+        if (!isAuto) (window as any).showAppAlert?.('Sync Failed', 'Failed to synchronize with Google Calendar automatically. Please try reconnecting your Google account.', 'error');
       }
     }
   };
@@ -233,7 +233,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
               <button onClick={() => setCurrentDate(new Date(year, month - 1))} className="p-2.5 bg-gray-50 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all border border-transparent hover:border-blue-200"><ChevronLeft size={18}/></button>
               <button onClick={() => setCurrentDate(new Date(year, month + 1))} className="p-2.5 bg-gray-50 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all border border-transparent hover:border-blue-200"><ChevronRight size={18}/></button>
             </div>
-            <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2.5 text-xs font-black uppercase tracking-widest text-blue-500 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 rounded-xl transition-all">Hari Ini</button>
+            <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2.5 text-xs font-black uppercase tracking-widest text-blue-500 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 rounded-xl transition-all">Today</button>
           </div>
         </div>
         
@@ -242,7 +242,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
             <div className="flex items-center gap-3">
               <div className={`w-2.5 h-2.5 rounded-full ${localStorage.getItem('googleAccessToken') ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-gray-300'}`} />
               <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                {localStorage.getItem('googleAccessToken') ? 'Google API: Aktif' : 'Google API: Terputus'}
+                {localStorage.getItem('googleAccessToken') ? 'Google API: Active' : 'Google API: Disconnected'}
               </span>
             </div>
             {!localStorage.getItem('googleAccessToken') && (
@@ -260,13 +260,13 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                 }}
                 className="text-[10px] font-black uppercase text-blue-500 hover:underline"
               >
-                Hubungkan Sekarang
+                Connect Now
               </button>
             )}
           </div>
 
           <div className="grid grid-cols-7 mb-2">
-            {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map(d => (
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
               <span key={d} className="text-center text-[10px] uppercase font-bold text-gray-400 tracking-wider py-2">{d}</span>
             ))}
           </div>
@@ -314,7 +314,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
       <div className="space-y-6">
         <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
           <h4 className="font-serif text-lg font-bold mb-4 flex items-center justify-between">
-            Detail Jadwal 
+            Schedule Details 
             <span className="text-xs text-blue-500 font-sans">{selectedDate}</span>
           </h4>
           <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
@@ -341,7 +341,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                         }}
                         className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-pink-500 text-white rounded-lg text-[9px] font-bold hover:bg-pink-600 transition-all shadow-sm active:scale-95"
                       >
-                        <ImageIcon size={10} /> LIHAT FOTO SEKARANG
+                        <ImageIcon size={10} /> VIEW PHOTO NOW
                       </button>
                     )}
                   </div>
@@ -371,19 +371,19 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
             ) : (
               <div className="text-center py-10 opacity-30">
                 <CalendarIcon size={32} className="mx-auto mb-2" />
-                <p className="text-xs">Tidak ada jadwal</p>
+                <p className="text-xs">No schedule</p>
               </div>
             )}
           </div>
         </div>
 
         <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
-          <h4 className="font-bold text-sm mb-4">{editingId ? 'Edit Jadwal' : 'Tambah Jadwal'}</h4>
+          <h4 className="font-bold text-sm mb-4">{editingId ? 'Edit Schedule' : 'Add Agenda'}</h4>
           {user ? (
             <div className="space-y-3">
               <input 
                 type="text" 
-                placeholder="Judul Jadwal..." 
+                placeholder="Title..." 
                 value={form.title}
                 onChange={e => setForm({...form, title: e.target.value})}
                 className="w-full px-4 py-2 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
@@ -394,12 +394,12 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                   onChange={e => setForm({...form, genre: e.target.value})}
                   className="px-4 py-2 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none"
                 >
-                  <option value="tugas">Tugas</option>
+                  <option value="tugas">Assignment</option>
                   <option value="uts">UTS/UAS</option>
                   <option value="event">Event</option>
-                  <option value="libur">Libur</option>
-                  <option value="materi">Materi</option>
-                  <option value="lainnya">Lainnya</option>
+                  <option value="libur">Holiday</option>
+                  <option value="materi">Materials</option>
+                  <option value="lainnya">Others</option>
                 </select>
                 <input 
                   type="time" 
@@ -409,7 +409,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                 />
               </div>
               <textarea 
-                placeholder="Catatan..." 
+                placeholder="Notes..." 
                 value={form.note}
                 onChange={e => setForm({...form, note: e.target.value})}
                 className="w-full px-4 py-2 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 outline-none h-20 resize-none"
@@ -419,14 +419,14 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                   onClick={handleAddEvent}
                   className="flex-1 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors shadow-lg shadow-blue-500/20"
                 >
-                  {editingId ? 'Simpan' : 'Tambah Jadwal'}
+                  {editingId ? 'Save' : 'Add Agenda'}
                 </button>
                 {editingId && (
                   <button 
                     onClick={() => { setEditingId(null); setForm({ title: '', genre: 'tugas', time: '', note: '' }); }}
                     className="px-4 py-2 text-xs font-bold text-gray-400"
                   >
-                    Batal
+                    Cancel
                   </button>
                 )}
               </div>
@@ -434,7 +434,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
           ) : (
             <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl">
               <Lock size={24} className="mx-auto mb-2 text-gray-300" />
-              <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login Google untuk menambah jadwal</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login with Google to add to schedule</p>
             </div>
           )}
         </div>
@@ -461,7 +461,7 @@ export default function Kalender({ user, isAdmin, setActivePage }: { user: User 
                 <Trash2 className="text-red-500" size={32} />
               </div>
               <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Jadwal ini akan dihapus permanen</p>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">This agenda item will be permanently deleted</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 

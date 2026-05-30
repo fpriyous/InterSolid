@@ -336,12 +336,11 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
             <span className={`text-[9px] font-black uppercase tracking-[0.5em] ${getStatusColor('text')} font-mono`}>
               System {systemStatus === 'optimal' ? 'Live' : systemStatus === 'warning' ? 'Lagging' : 'Critical'}
             </span>
-          </div>
-          <h1 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
-            Selamat Datang, <span className="text-blue-600">{randomTitle}</span>.
+          </div>          <h1 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
+            Welcome, <span className="text-blue-600">{randomTitle}</span>.
           </h1>
           <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-             <Clock size={10} /> {new Date().toLocaleTimeString('id-id', { hour: '2-digit', minute: '2-digit' })} WIB • LOCAL HOST VERIFIED
+             <Clock size={10} /> {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })} WIB • LOCAL HOST VERIFIED
           </p>
         </div>
         <div 
@@ -349,15 +348,15 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         >
            {[
              { label: 'Files', val: stats.totalMemories, suffix: 'MB', color: 'text-slate-800 dark:text-white' },
-             { label: 'Agenda', val: stats.totalEvents, suffix: 'UNIT', color: 'text-slate-800 dark:text-white' },
-             { label: 'Latensi', val: `${latency}ms`, suffix: 'PING', color: getLatencyColor(latency) }
+             { label: 'Agenda', val: stats.totalEvents, suffix: 'UNITS', color: 'text-slate-800 dark:text-white' },
+             { label: 'Latency', val: `${latency}ms`, suffix: 'PING', color: getLatencyColor(latency) }
            ].map((stat, i) => (
              <div key={i} className="flex flex-col items-center md:items-end">
-                <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">{stat.label}</span>
-                <div className="flex items-baseline gap-0.5 md:gap-1">
-                  <span className={`text-lg md:text-2xl font-black tracking-tighter leading-none ${stat.color}`}>{stat.val}</span>
-                  <span className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase">{stat.suffix}</span>
-                </div>
+                 <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.2em] text-slate-500 mb-1">{stat.label}</span>
+                 <div className="flex items-baseline gap-0.5 md:gap-1">
+                   <span className={`text-lg md:text-2xl font-black tracking-tighter leading-none ${stat.color}`}>{stat.val}</span>
+                   <span className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase">{stat.suffix}</span>
+                 </div>
              </div>
            ))}
         </div>
@@ -380,7 +379,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                <div className="relative z-10 w-full max-w-5xl">
                   <div className="flex items-center gap-4 mb-12">
                     <div className="px-5 py-2 bg-white/20 backdrop-blur-2xl border border-white/30 rounded-full text-[10px] font-black uppercase tracking-[0.4em] text-white">
-                       Arsip Utama
+                       Core Archive
                     </div>
                     <div className="w-px h-6 bg-white/30" />
                     <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">Version 2.0.4</span>
@@ -388,17 +387,17 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                   
                   <div className="overflow-hidden mb-12">
                     <motion.h2 
-                      initial={{ y: "100%" }}
-                      animate={{ y: 0 }}
-                      transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-                      className="text-8xl md:text-[160px] font-black tracking-tighter leading-[0.7] text-white"
+                       initial={{ y: "100%" }}
+                       animate={{ y: 0 }}
+                       transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                       className="text-8xl md:text-[160px] font-black tracking-tighter leading-[0.7] text-white"
                     >
                       Inter<br/>Solid.
                     </motion.h2>
                   </div>
                   
                   <p className="text-white/90 text-lg md:text-2xl font-medium max-w-2xl mb-16 leading-relaxed">
-                    Pusat repositori digital untuk sinkronisasi data kegiatan, dokumentasi historis, dan koordinasi operasional InterSolid.
+                    Digital repository center for event database synchronization, historical documents, and InterSolid operational hub.
                   </p>
 
                   <div className="flex flex-wrap gap-8">
@@ -406,14 +405,14 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                       onClick={() => setActivePage('notulensi')}
                       className="group flex items-center gap-6 px-14 py-7 bg-white text-blue-700 rounded-3xl font-black text-[12px] uppercase tracking-[0.4em] hover:bg-white/95 transition-all shadow-2xl shadow-blue-900/40 active:scale-95"
                     >
-                      Akses Notulensi
+                      Meeting Minutes
                       <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                     <button 
                       onClick={() => setActivePage('kalender')}
                       className="px-14 py-7 bg-white/10 backdrop-blur-2xl border border-white/20 text-white rounded-3xl font-black text-[12px] uppercase tracking-[0.4em] hover:bg-white/20 transition-all active:scale-95"
                     >
-                      Jadwal Agenda
+                      Class Schedule
                     </button>
                   </div>
                </div>
@@ -427,7 +426,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                   <div className="space-y-10">
                     <div className="flex items-center gap-6">
                        <div className="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
-                       <span className="text-[12px] font-black uppercase tracking-[0.6em] text-blue-600 dark:text-blue-400">Warta Terakhir</span>
+                       <span className="text-[12px] font-black uppercase tracking-[0.6em] text-blue-600 dark:text-blue-400">Latest Announcement</span>
                        <div className="flex-1 h-px bg-slate-200/60 dark:bg-white/10" />
                     </div>
                     <div className="group/ann cursor-pointer" onClick={() => setActivePage('pengumuman')}>
@@ -442,7 +441,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                 {/* Next immediate event */}
                 <div className="space-y-10 pt-12 border-t border-slate-200 dark:border-white/10">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-[0.6em] text-emerald-600 dark:text-emerald-400">Agenda Terdekat</span>
+                    <span className="text-[11px] font-black uppercase tracking-[0.6em] text-emerald-600 dark:text-emerald-400">Upcoming Schedule</span>
                     <div className="flex items-center gap-2.5">
                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                        <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">LIVE SYNC</span>
@@ -465,11 +464,11 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                                  const today = new Date().toISOString().split('T')[0];
                                  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
                                  const nextDay = new Date(Date.now() + 172800000).toISOString().split('T')[0];
-                                 if (event.date === today) return "HARI INI";
-                                 if (event.date === tomorrow) return "BESOK";
-                                 if (event.date === nextDay) return "LUSA";
-                                 return new Date(event.date).toLocaleDateString('id-ID', { month: 'short' });
-                               })()}
+                                 if (event.date === today) return "TODAY";
+                                 if (event.date === tomorrow) return "TOMORROW";
+                                 if (event.date === nextDay) return "DAY AFTER";
+                                 return new Date(event.date).toLocaleDateString('en-US', { month: 'short' });
+                                })()}
                              </span>
                              <span className="text-4xl font-black tracking-tighter leading-none text-slate-900 dark:text-white">{new Date(event.date).getDate()}</span>
                           </div>
@@ -482,7 +481,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                                </p>
                                <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
                                <p className="text-[9px] text-slate-500 dark:text-slate-500 font-black uppercase tracking-[0.3em]">
-                                  {event.genre || 'UMUM'}
+                                  {event.genre || 'GENERAL'}
                                </p>
                             </div>
                           </div>
@@ -491,7 +490,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                     </div>
                   ) : (
                     <div className="p-12 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-white/10 bg-white/20 dark:bg-white/[0.01] text-center">
-                       <p className="text-[11px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.6em]">Tidak ada record aktif</p>
+                       <p className="text-[11px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.6em]">No active records found</p>
                     </div>
                   )}
                 </div>
@@ -511,15 +510,15 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                    <div className="flex -space-x-3">
                      {[1,2,3,4,5].map(i => (
                        <div key={i} className="w-12 h-12 rounded-2xl border-2 border-white dark:border-[#0b121f] bg-slate-100 dark:bg-slate-800 flex items-center justify-center shadow-lg transition-transform hover:-translate-y-1 hover:z-20">
-                          <UserIcon size={18} className="text-slate-400 dark:text-slate-500" />
+                           <UserIcon size={18} className="text-slate-400 dark:text-slate-500" />
                        </div>
                      ))}
                    </div>
                    <div className="text-right">
-                      <p className="text-[14px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">{stats.activityIndex} Aktivitas Tercatat</p>
+                      <p className="text-[14px] font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">{stats.activityIndex} Recorded Activities</p>
                       <div className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.5em] mt-2 flex items-center justify-end gap-2">
                          <div className="w-1 h-1 bg-emerald-500 rounded-full animate-ping" />
-                         INDEKS SISTEM: REAL-TIME
+                         SYSTEM INDEX: REAL-TIME
                       </div>
                    </div>
                 </div>
@@ -539,16 +538,16 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         >
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
             <div className="space-y-1">
-               <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-600">Aliran Aktivitas Portal</h2>
+               <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-600">Portal Activity Feed</h2>
                <p className="text-[12px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                 Log Pekan: {(() => {
+                 Weekly Log: {(() => {
                    const start = new Date(chartWeek);
                    const day = start.getDay();
                    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
                    start.setDate(diff);
                    const end = new Date(start);
                    end.setDate(start.getDate() + 6);
-                   return `${start.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+                   return `${start.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`;
                  })()}
                </p>
             </div>
@@ -607,7 +606,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                     }} 
                     cursor={{ stroke: '#3b82f6', strokeWidth: 1 }}
                     formatter={(value: any) => [
-                      <span className="text-xl font-black text-blue-400 tracking-tighter">{value} ENTRI</span>,
+                      <span className="text-xl font-black text-blue-400 tracking-tighter">{value} ENTRIES</span>,
                       ''
                     ]}
                     labelFormatter={(label) => (
@@ -630,7 +629,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                  <div className="w-12 h-12 bg-slate-50 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-300">
                    <Clock size={24} />
                  </div>
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Tidak ada aktivitas rekaman pada periode ini</p>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">No recorded activities for this period</p>
               </div>
             )}
           </div>
@@ -638,13 +637,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
           <div className="mt-8 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
              <div className="flex items-center gap-10">
                 <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Puncak Aktivitas</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Activity Peak</p>
                    <p className="text-xl font-black tracking-tighter text-slate-800 dark:text-white">
-                     {realChartData.length > 0 ? Math.max(...realChartData.map(d => d.val)) : 0} Entri
+                     {realChartData.length > 0 ? Math.max(...realChartData.map(d => d.val)) : 0} Entries
                    </p>
                 </div>
                 <div>
-                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Status Sistem</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">System Status</p>
                    <p className={`text-xl font-black tracking-tighter ${systemStatus === 'optimal' ? 'text-emerald-500' : 'text-amber-500'}`}>
                      {systemStatus.toUpperCase()}
                    </p>
@@ -659,13 +658,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
             variants={itemVariants}
             className="bg-white dark:bg-slate-900 rounded-[48px] p-10 border border-slate-100 dark:border-white/5 shadow-2xl flex flex-col h-full"
           >
-             <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mb-10">Operasional</h2>
+             <h2 className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-500 mb-10">Operations</h2>
              <div className="grid grid-cols-2 gap-4">
                 {[
                   { id: 'spin', icon: Zap, label: 'RANDOMIZER', color: 'bg-indigo-600' },
-                  { id: 'voting', icon: TrendingUp, label: 'E-VOTING', color: 'bg-slate-700 dark:bg-slate-800' },
-                  { id: 'absen', icon: Users, label: 'PRESENSI', color: 'bg-emerald-600' },
-                  { id: 'notulensi', icon: Clock, label: 'NOTULENSI', color: 'bg-blue-600' }
+                  { id: 'voting', icon: TrendingUp, label: 'VOTE', color: 'bg-slate-700 dark:bg-slate-800' },
+                  { id: 'absen', icon: Users, label: 'ATTENDANCE', color: 'bg-emerald-600' },
+                  { id: 'notulensi', icon: Clock, label: 'MINUTES', color: 'bg-blue-600' }
                 ].map(tool => (
                   <button 
                     key={tool.id}
@@ -744,13 +743,13 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                    <div className="p-2 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-600/20">
                       <Database size={16} />
                    </div>
-                   <span className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-400">Arsip Dokumentasi</span>
+                   <span className="text-[10px] font-black uppercase tracking-[0.5em] text-blue-400">Documentation Archive</span>
                 </div>
                 <h3 className="text-4xl md:text-7xl font-black text-white tracking-tighter uppercase leading-none italic drop-shadow-2xl">
-                  "{recentMemories[0]?.caption || 'Menyimpan setiap detik kebersamaan kita.'}"
+                  "{recentMemories[0]?.caption || 'Preserving every second of our togetherness.'}"
                 </h3>
                 <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">
-                   Personel: {recentMemories[0]?.userName || 'Sistem'} • Integritas: Validated
+                   Personnel: {recentMemories[0]?.userName || 'System'} • Integrity: Validated
                 </p>
              </div>
              
@@ -758,7 +757,7 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
                onClick={(e) => { e.stopPropagation(); setActivePage('memory', recentMemories[0]?.id); }}
                className="px-10 py-5 bg-white text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-[0.4em] hover:bg-slate-100 transition-all flex items-center gap-3 shadow-2xl"
              >
-                BUKA DATABASE <ArrowRight size={14} />
+                OPEN ARCHIVE <ArrowRight size={14} />
              </button>
           </div>
         </motion.div>

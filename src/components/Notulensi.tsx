@@ -118,10 +118,10 @@ const MenuBar = ({ editor, onAddImage, onOpenHistory }: { editor: any, onAddImag
           type="button"
           onClick={onOpenHistory}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
-          title="Lihat Riwayat Perubahan"
+          title="View Revision History"
         >
           <History size={14} strokeWidth={2.5}/>
-          <span className="text-[10px] font-bold hidden md:inline">Riwayat</span>
+          <span className="text-[10px] font-bold hidden md:inline">History</span>
         </button>
       </div>
 
@@ -347,7 +347,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('File harus berupa gambar!');
+      (window as any).showAppAlert?.('Upload Failed', 'The selected file must be an image (JPG, PNG, WebP)!', 'error');
       return;
     }
 
@@ -362,7 +362,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       }
     } catch (error: any) {
       console.error('Upload failed:', error);
-      alert('Gagal mengunggah gambar: ' + error.message);
+      (window as any).showAppAlert?.('Upload Failed', 'Failed to upload image to Cloud Storage: ' + error.message, 'error');
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -538,7 +538,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       types: ['heading', 'paragraph'],
     }),
     Placeholder.configure({
-      placeholder: 'Mulai mengetik catatan materi atau rapat di sini...',
+      placeholder: 'Start typing note details or meeting notes here...',
     }),
     ...(yDoc ? [
       Collaboration.configure({
@@ -985,7 +985,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       });
     } catch (e: any) {
       handleFirestoreError(e, OperationType.UPDATE, `notes/${id}`);
-      alert('Gagal mengubah status kunci: ' + e.message);
+      (window as any).showAppAlert?.('Lock Failed', 'Failed to change note lock state: ' + e.message, 'error');
     }
   };
 
@@ -995,18 +995,18 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     setLoading(true);
     try {
       const docRef = await addDoc(collection(db, 'notes'), {
-        title: 'Catatan Baru',
-        tag: 'Umum',
+        title: 'New Note',
+        tag: 'General',
         content: '',
         htmlContent: '',
-        date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+        date: new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }),
         authorId: user.uid,
         isLocked: false,
         createdAt: Timestamp.now()
       });
       
       setEditingId(docRef.id);
-      setNewNote({ title: 'Catatan Baru', tag: 'Umum' });
+      setNewNote({ title: 'New Note', tag: 'General' });
       setIsAdding(true);
       setSelectedNote(null);
       
@@ -1014,11 +1014,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         editor.commands.setContent('');
       }
       
-      logPortalActivity('note_create', 'Membuat catatan baru', user);
+      logPortalActivity('note_create', 'Created a new note', user);
     } catch (e: any) {
       console.error(e);
       handleFirestoreError(e, OperationType.CREATE, 'notes');
-      alert('Gagal memulai catatan baru: ' + e.message);
+      (window as any).showAppAlert?.('Failed', 'Failed to create a new note: ' + e.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1028,7 +1028,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     if (editingId && editor && !editor.isDestroyed) {
       const text = editor.getText().trim();
       const html = editor.getHTML().trim();
-      const title = newNote.title.trim() || 'Tanpa Judul';
+      const title = newNote.title.trim() || 'Untitled';
       const tag = newNote.tag;
       
       setSaveStatus('saving');
@@ -1051,7 +1051,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         const currentNote = notes.find(n => n.id === editingId);
         const isVeryNew = currentNote?.createdAt && (Date.now() - currentNote.createdAt.toMillis() < 60000);
         
-        if (isVeryNew && (title === 'Tanpa Judul' || title === 'Catatan Baru') && (text === '' || html === '<p></p>')) {
+        if (isVeryNew && (title === 'Untitled' || title === 'New Note') && (text === '' || html === '<p></p>')) {
           console.log('[Cleanup] Deleting empty placeholder note');
           await deleteDoc(doc(db, 'notes', editingId));
         } else {
@@ -1081,7 +1081,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     } catch (e: any) {
       console.error("Delete note error detail:", e);
       handleFirestoreError(e, OperationType.DELETE, `notes/${id}`);
-      alert('Gagal menghapus catatan: ' + (e.message || "Izin ditolak oleh server (Permission Denied)"));
+      (window as any).showAppAlert?.('Access Denied', 'Failed to delete note: ' + (e.message || "Permission denied by server"), 'error');
       setConfirmId(null);
     }
   };
@@ -1091,7 +1091,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     const element = noteRef.current;
     const opt = {
       margin: 1,
-      filename: `${selectedNote?.title || 'catatan'}.pdf`,
+      filename: `${selectedNote?.title || 'note'}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 2 },
       jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' as const }
@@ -1108,7 +1108,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
           <input 
             type="text" 
-            placeholder="Cari materi/rapat..." 
+            placeholder="Search materials/meetings..." 
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-3 text-xs rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a252f] outline-none shadow-sm focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-gray-300"
@@ -1126,7 +1126,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
           className="w-full py-3.5 bg-blue-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50"
           disabled={loading}
         >
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} strokeWidth={3}/>} Tulis Baru
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} strokeWidth={3}/>} Create Note
         </button>
 
         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
@@ -1155,7 +1155,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     <button 
                       onClick={(e) => { e.stopPropagation(); toggleLock(n.id, !!n.isLocked); }}
                       className={`p-1 rounded-md transition-all ${n.isLocked ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-blue-500'}`}
-                      title={n.isLocked ? "Buka Kunci" : "Kunci Catatan"}
+                      title={n.isLocked ? "Unlock Note" : "Lock Note"}
                     >
                       {n.isLocked ? <Lock size={12}/> : <Unlock size={12}/>}
                     </button>
@@ -1165,14 +1165,14 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               </div>
               <h4 className="font-bold text-sm leading-tight mb-2 line-clamp-1">{n.title}</h4>
               <p className={`text-[10px] line-clamp-1 opacity-70 italic ${selectedNote?.id === n.id ? 'text-blue-50' : 'text-gray-400'}`}>
-                {n.content || 'Lihat isi catatan...'}
+                {n.content || 'View note content...'}
               </p>
             </div>
           ))}
           {filteredNotes.length === 0 && (
             <div className="text-center py-16 grayscale opacity-20">
               <FileText size={64} className="mx-auto mb-4 stroke-1" />
-              <p className="text-[10px] font-black uppercase tracking-widest">Arsip Kosong</p>
+              <p className="text-[10px] font-black uppercase tracking-widest">No Notes Found</p>
             </div>
           )}
         </div>
@@ -1189,7 +1189,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   <button 
                     onClick={handleExitEditor}
                     className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all shrink-0"
-                    title="Simpan & Keluar"
+                    title="Save & Exit"
                   >
                     <ArrowLeft size={18} strokeWidth={2.5} />
                   </button>
@@ -1197,20 +1197,20 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     <div className="flex items-center gap-2 h-4 mb-0.5">
                       {saveStatus === 'saving' ? (
                         <span className="flex items-center gap-1 text-[9px] text-blue-500 font-black uppercase tracking-widest animate-pulse">
-                          <CloudUpload size={10} strokeWidth={3} /> Menyimpan...
+                          <CloudUpload size={10} strokeWidth={3} /> Saving...
                         </span>
                       ) : lastSavedAt ? (
                         <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1">
                           <CheckCircle2 size={10} className="text-green-500" />
-                          Terakhir disimpan {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          Last saved {lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       ) : (
-                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Dokumen Berbagi</span>
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Shared Document</span>
                       )}
                     </div>
                     <input 
                       type="text" 
-                      placeholder="Judul Dokumen..." 
+                      placeholder="Document Title..." 
                       value={newNote.title}
                       onChange={e => {
                         const title = e.target.value;
@@ -1400,7 +1400,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-900/50">
                         <div className="flex items-center gap-2">
                           <History size={16} className="text-amber-500" />
-                          <span className="text-[10px] font-black uppercase tracking-widest">Riwayat Perubahan</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest">Revision History</span>
                         </div>
                         <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-all z-10">
                           <X size={16} />
@@ -1411,17 +1411,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                         {loadingHistory ? (
                           <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-50">
                              <Loader2 size={24} className="animate-spin text-blue-500" />
-                             <span className="text-[9px] font-bold">Memuat arsip...</span>
+                             <span className="text-[9px] font-bold">Loading archive...</span>
                           </div>
                         ) : historyDocs.length === 0 ? (
-                          <div className="text-center py-12 opacity-30 italic text-[10px]">Belum ada riwayat tercatat.</div>
+                          <div className="text-center py-12 opacity-30 italic text-[10px]">No revision history recorded yet.</div>
                         ) : (
                           historyDocs.map((hDoc, idx) => (
                             <div key={hDoc.id} className="group relative">
                               <div className="absolute -left-2 top-0 bottom-0 w-0.5 bg-amber-500/20 group-hover:bg-amber-500 transition-all rounded-full" />
                               <div className="pl-4">
                                 <p className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mb-1">
-                                  {hDoc.timestamp?.toDate().toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  {hDoc.timestamp?.toDate().toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                 </p>
                                 <div className="flex items-center gap-2 mb-2">
                                   <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center text-[8px] font-black text-white shrink-0">
@@ -1436,7 +1436,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                                     e.stopPropagation();
                                     
                                     if (!editor || editor.isDestroyed || !editor.commands || !(editor as any).extensionManager) {
-                                      alert("Editor belum siap.");
+                                      (window as any).showAppAlert?.('Editor Error', 'Mesin real-time editor belum siap, silakan tunggu sesaat.', 'info');
                                       return;
                                     }
 
@@ -1470,15 +1470,15 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                                       
                                       setShowHistory(false);
                                       setSaveStatus('saved');
-                                      alert("Berhasil dipulihkan!");
+                                      (window as any).showAppAlert?.('Pulih Berhasil', 'Catatan notulensi berhasil dipulihkan secara real-time!', 'success');
                                     } catch (err) {
                                       console.error(err);
-                                      alert("Gagal memulihkan.");
+                                      (window as any).showAppAlert?.('Gagal Pulih', 'Gagal memulihkan versi catatan rapat sebelumnya.', 'error');
                                     }
                                   }}
                                   className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"
                                 >
-                                  <RotateCcw size={12} strokeWidth={3} /> PULIHKAN VERSI INI
+                                  <RotateCcw size={12} strokeWidth={3} /> RESTORE THIS VERSION
                                 </button>
                               </div>
                             </div>
@@ -1488,7 +1488,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                       
                       <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-100 dark:border-amber-900/20">
                         <p className="text-[9px] text-amber-600 dark:text-amber-400 font-medium leading-relaxed">
-                          <b>Tips Anti-Vandalisme:</b> Riwayat menyimpan 20 perubahan terakhir secara otomatis. Gunakan tombol pulihkan jika ada konten yang sengaja dirusak.
+                          <b>Anti-Vandalism Tips:</b> Revision history automatically keeps up to 20 of the latest changes. Use the restore button if content is accidentally cleared or vandalized.
                         </p>
                       </div>
                     </motion.div>
@@ -1666,7 +1666,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 <button 
                   onClick={() => handleAction('edit', selectedNote.id)} 
                   className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed text-gray-300' : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10'}`}
-                  title={selectedNote.isLocked && !isAdmin ? "Catatan Dikunci" : "Ubah Catatan"}
+                  title={selectedNote.isLocked && !isAdmin ? "Note Locked" : "Edit Note"}
                   disabled={selectedNote.isLocked && !isAdmin}
                 >
                   <Pencil size={18}/>
@@ -1674,7 +1674,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 <button 
                   onClick={() => handleAction('delete', selectedNote.id)} 
                   className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed text-gray-300' : 'text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10'}`}
-                  title={selectedNote.isLocked && !isAdmin ? "Catatan Dikunci" : "Hapus"}
+                  title={selectedNote.isLocked && !isAdmin ? "Note Locked" : "Delete"}
                   disabled={selectedNote.isLocked && !isAdmin}
                 >
                   <Trash2 size={18}/>
@@ -1698,7 +1698,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                <div className="flex items-center gap-2 text-[9px] font-black uppercase text-gray-300 tracking-[1px]">
                   <FileText size={14} className="opacity-40" /> InterSolid Documentation
                </div>
-               <p className="text-[9px] font-bold text-gray-300 italic">Pencatatan Digital Kelas</p>
+               <p className="text-[9px] font-bold text-gray-300 italic">Class Digital Notes Record</p>
             </div>
           </div>
         ) : (
@@ -1735,7 +1735,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               <button 
                 onClick={() => setShowImageModal(false)}
                 className="absolute top-6 right-6 text-gray-300 hover:text-red-500 transition-colors"
-                title="Tutup"
+                title="Close"
               >
                 <X size={20} />
               </button>
@@ -1743,8 +1743,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-4">
                   <ImageIcon size={32} />
                 </div>
-                <h3 className="font-serif text-2xl font-bold">Tambah Gambar</h3>
-                <p className="text-xs text-gray-400 mt-2 uppercase font-bold tracking-[2px]">Pilih metode input gambar</p>
+                <h3 className="font-serif text-2xl font-bold">Add Image</h3>
+                <p className="text-xs text-gray-400 mt-2 uppercase font-bold tracking-[2px]">Choose image input method</p>
               </div>
 
               <div className="space-y-4">
@@ -1755,17 +1755,17 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   }}
                   className="w-full py-4 bg-blue-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
                 >
-                  <Upload size={16} /> Unggah dari Perangkat
+                  <Upload size={16} /> Upload from Device
                 </button>
                 
                 <div className="flex items-center gap-4 py-2 opacity-30">
                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
-                   <span className="text-[10px] font-bold uppercase">Atau</span>
+                   <span className="text-[10px] font-bold uppercase">Or</span>
                    <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" />
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-[10px] text-gray-400 font-bold uppercase ml-1">Masukkan URL Langsung</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase ml-1">Enter URL Directly</p>
                   <div className="flex gap-2">
                     <input 
                       type="text" 
@@ -1811,21 +1811,21 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Trash2 className="text-red-500" size={32} />
               </div>
-              <h3 className="font-serif text-2xl font-bold mb-2">Hapus Catatan?</h3>
-              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Catatan ini akan dihapus permanen</p>
+              <h3 className="font-serif text-2xl font-bold mb-2">Delete Note?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">This note will be permanently deleted</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => setConfirmId(null)}
                   className="py-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all shadow-sm"
                 >
-                  Batalkan
+                  Cancel
                 </button>
                 <button 
                   onClick={() => deleteNote(confirmId)}
                   className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
                 >
-                  Hapus Permanen
+                  Permanently Delete
                 </button>
               </div>
             </motion.div>

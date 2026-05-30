@@ -62,15 +62,15 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { id: 'home', label: 'Beranda', icon: LayoutGrid, description: 'Pantau ringkasan aktivitas kelas hari ini.' },
-  { id: 'kalender', label: 'Kalender', icon: Calendar, description: 'Kelola data dan informasi Kalender di sini.' },
-  { id: 'notulensi', label: 'Notulensi', icon: FileText, description: 'Catatan hasil rapat dan bahan materi.' },
-  { id: 'aspirasi', label: 'Aspirasi', icon: MessageSquare, description: 'Kirim pesan dan saran secara anonim.' },
-  { id: 'pengumuman', label: 'Pengumuman', icon: Bell, description: 'Informasi terbaru untuk seluruh anggota.' },
-  { id: 'memory', label: 'Memories', icon: ImageIcon, description: 'Bagikan dan simpan momen indah kelas kita.' },
-  { id: 'absen', label: 'List', icon: CheckCircle, description: 'Data iuran dan kehadiran anggota kelas.' },
-  { id: 'voting', label: 'Voting', icon: Vote, description: 'Lakukan pemungutan suara secara digital.' },
-  { id: 'spin', label: 'Spin', icon: RotateCw, description: 'Pilih anggota secara acak atau bagi kelompok.' },
+  { id: 'home', label: 'Dashboard', icon: LayoutGrid, description: 'Monitor class activities and analytics in real-time.' },
+  { id: 'kalender', label: 'Calendar', icon: Calendar, description: 'Manage and coordinate class schedules.' },
+  { id: 'notulensi', label: 'Notes', icon: FileText, description: 'Record minutes of meetings and class notes.' },
+  { id: 'aspirasi', label: 'Yapping', icon: MessageSquare, description: 'Submit anonymous suggestions and questions.' },
+  { id: 'pengumuman', label: 'Announcements', icon: Bell, description: 'Broadcast updates and alerts to everyone.' },
+  { id: 'memory', label: 'Memo', icon: ImageIcon, description: 'Preserve and share visual highlights of our journey.' },
+  { id: 'absen', label: 'Data', icon: CheckCircle, description: 'Track digital checklists, attendance, and dues.' },
+  { id: 'voting', label: 'Vote', icon: Vote, description: 'Host real-time polls and digital ballots.' },
+  { id: 'spin', label: 'Spin Wheel', icon: RotateCw, description: 'Pick random class members or divide groups.' },
 ];
 
 const ADMIN_PIN = '313';
@@ -109,13 +109,18 @@ export default function App() {
   const [pinInput, setPinInput] = useState('');
   const [notification, setNotification] = useState<{ id: string, message: string, type?: string } | null>(null);
   const [authError, setAuthError] = useState<'unauthenticated' | 'unauthorized' | null>(null);
+  const [appAlert, setAppAlert] = useState<{ title: string; message: string; type?: 'info' | 'error' | 'success' } | null>(null);
 
   useEffect(() => {
     (window as any).showAuthError = (type: 'unauthenticated' | 'unauthorized') => {
       setAuthError(type);
     };
+    (window as any).showAppAlert = (title: string, message: string, type: 'info' | 'error' | 'success' = 'info') => {
+      setAppAlert({ title, message, type });
+    };
     return () => {
       delete (window as any).showAuthError;
+      delete (window as any).showAppAlert;
     };
   }, []);
 
@@ -189,13 +194,13 @@ export default function App() {
           console.error("Gagal mendaftarkan admin di database:", e);
         }
       } else {
-        alert('PERINGATAN: Anda belum login Google. Status Admin AKTIF di tampilan (UI), tetapi Anda mungkin tidak bisa menghapus data di database sebelum login.');
+        (window as any).showAppAlert?.('Belum Login Google', 'Sistem berhasil meningkatkan status layar ke Admin AKTIF. Namun, Anda tetap memerlukan login Google untuk dapat menyimpan, memperbaharui, atau menghapus data riil dari Firebase.', 'info');
       }
       
       setShowPinModal(false);
       setPinInput('');
     } else {
-      alert('PIN Salah!');
+      (window as any).showAppAlert?.('PIN Salah', 'Kode PIN admin yang dimasukkan salah, silakan coba lagi.', 'error');
       setPinInput('');
     }
   };
@@ -225,7 +230,11 @@ export default function App() {
         console.log('Multiple login requests detected, one was cancelled.');
       } else {
         console.error('Login failed', error);
-        alert('Gagal Login. Jika muncul pesan "Google belum memverifikasi", klik "Lanjutan" -> "Buka (Tidak Aman)".');
+        (window as any).showAppAlert?.(
+          'Petunjuk Masuk Google',
+          'Situs ini menggunakan otentikasi resmi dan aman dari Google Firebase. Cara Masuk: Pada jendela Google "Situs Berbahaya / Belum Diverifikasi", silakan klik "Lanjutan / Advanced" di kiri bawah -> lalu pilih "Buka gen-lang-client-... (Tidak Aman)". Jika ada kendala, silakan hubungi pengurus kelas Anda.',
+          'info'
+        );
       }
     } finally {
       setIsLoggingIn(false);
@@ -248,7 +257,7 @@ export default function App() {
               <Loader2 className="w-6 h-6 text-blue-500 animate-pulse" />
             </div>
           </div>
-          <p className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-blue-500/50 animate-pulse">Menyiapkan Fitur...</p>
+          <p className="mt-6 text-sm font-black uppercase tracking-[0.2em] text-blue-500/50 animate-pulse">Setting up Module...</p>
         </div>
       }>
         {(() => {
@@ -286,7 +295,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="font-serif text-lg md:text-xl font-bold tracking-tight leading-tight">InterSolid</h1>
-            <span className="text-[8px] md:text-[10px] uppercase tracking-widest text-[#9aaabb] font-medium">Portal Kelas</span>
+            <span className="text-[8px] md:text-[10px] uppercase tracking-widest text-[#9aaabb] font-medium">Class Portal</span>
           </div>
         </div>
 
@@ -314,7 +323,7 @@ export default function App() {
                   ? (isDewa ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400') 
                   : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
-              title={isDewa ? "Akses Dewa Aktif" : effectiveAdmin ? "Akses Admin Aktif" : "Buka Akses Admin"}
+              title={isDewa ? "Dewa Access Active" : effectiveAdmin ? "Admin Access Active" : "Unlock Admin Access"}
             >
               {effectiveAdmin ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
             </button>
@@ -322,7 +331,7 @@ export default function App() {
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              title="Ganti Tema"
+              title="Switch Theme"
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -336,7 +345,7 @@ export default function App() {
                   alt={user.displayName || ''} 
                   className="w-8 h-8 rounded-full border border-blue-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all" 
                   onClick={handleLogout}
-                  title="Klik untuk Logout"
+                  title="Click to Logout"
                 />
                 <button 
                   onClick={handleLogout}
@@ -351,7 +360,7 @@ export default function App() {
                 onClick={handleLogin}
                 className="ml-2 px-4 py-2 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
               >
-                <UserIcon size={14} /> Login Google
+                <UserIcon size={14} /> Login with Google
               </button>
             )}
           </nav>
@@ -391,7 +400,7 @@ export default function App() {
             {activePage !== 'home' && (
               <div className="mb-6 md:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                  <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Fitur Modern</span>
+                  <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Modern Feature</span>
                   <h2 className="font-serif text-2xl md:text-3xl font-bold">{currentItem?.label}</h2>
                   <p className="text-xs md:text-sm text-gray-400 mt-1">{currentItem?.description}</p>
                 </div>
@@ -399,7 +408,7 @@ export default function App() {
                   onClick={() => navigateToPage('home')}
                   className="flex items-center justify-center gap-2 px-6 py-2.5 bg-white dark:bg-[#1a252f] border border-blue-50 dark:border-blue-900/20 rounded-xl text-xs font-bold text-blue-500 hover:bg-blue-50 transition-all w-fit md:w-fit"
                 >
-                  <ArrowLeft size={16} /> Beranda
+                  <ArrowLeft size={16} /> Dashboard
                 </button>
               </div>
             )}
@@ -422,7 +431,7 @@ export default function App() {
           )}
           <div className="relative z-10 flex flex-col items-center gap-1">
              <LayoutGrid size={20} fill={activePage === 'home' ? "currentColor" : "none"} strokeWidth={2.5} />
-             <span className={`text-[8px] font-black uppercase tracking-tighter ${activePage === 'home' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>Home</span>
+             <span className={`text-[8px] font-black uppercase tracking-tighter ${activePage === 'home' ? 'opacity-100' : 'opacity-0 h-0 overflow-hidden'}`}>Dashboard</span>
           </div>
         </button>
 
@@ -483,8 +492,8 @@ export default function App() {
               
               <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h3 className="font-serif text-2xl font-bold">Semua Fitur</h3>
-                  <p className="text-xs text-gray-400">Pilih menu yang Anda butuhkan</p>
+                  <h3 className="font-serif text-2xl font-bold">All Features</h3>
+                  <p className="text-xs text-gray-400">Select the menu you need</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
@@ -499,7 +508,7 @@ export default function App() {
                     }`}
                   >
                     <ShieldCheck size={16} />
-                    {effectiveAdmin ? 'Admin' : 'Akses'}
+                    {effectiveAdmin ? 'Admin' : 'Access'}
                   </button>
                   <button 
                     onClick={() => setIsDarkMode(!isDarkMode)}
@@ -579,7 +588,7 @@ export default function App() {
                 <ShieldAlert size={32} />
               </div>
               <h3 className={`font-serif text-2xl font-bold mb-4 ${notification.type === 'warning' ? 'text-orange-500' : ''}`}>
-                {notification.type === 'warning' ? 'PERINGATAN MODERATOR' : 'Pesan Sistem'}
+                {notification.type === 'warning' ? 'MODERATOR WARNING' : 'System Message'}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-8 leading-relaxed italic">"{notification.message}"</p>
               <button 
@@ -595,7 +604,7 @@ export default function App() {
                 }}
                 className={`w-full py-4 text-white rounded-2xl text-sm font-bold shadow-lg transition-all ${notification.type === 'warning' ? 'bg-orange-500 shadow-orange-500/30 hover:bg-orange-600' : 'bg-blue-500 shadow-blue-500/20 hover:bg-blue-600'}`}
               >
-                Saya Mengerti
+                I Understand
               </button>
             </motion.div>
           </div>
@@ -624,14 +633,14 @@ export default function App() {
                 <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-4">
                   <ShieldAlert size={32} />
                 </div>
-                <h3 className="font-serif text-2xl font-bold">Kunci Admin</h3>
+                <h3 className="font-serif text-2xl font-bold">Admin Lock</h3>
                 <p className="text-[10px] text-gray-400 mt-2 uppercase font-bold tracking-widest leading-relaxed">
-                  Email: <span className="text-blue-500">{user?.email || 'Belum Login'}</span><br/>
-                  Admin: <span className={isAdmin ? 'text-green-500' : 'text-red-400'}>{isAdmin ? 'AKTIF' : 'TIDAK AKTIF'}</span>
+                  Email: <span className="text-blue-500">{user?.email || 'Not Logged In'}</span><br/>
+                  Admin: <span className={isAdmin ? 'text-green-500' : 'text-red-400'}>{isAdmin ? 'ACTIVE' : 'INACTIVE'}</span>
                 </p>
                 {!user && (
                   <div className="mt-4 p-2 bg-red-50 text-red-500 rounded-lg text-[9px] font-bold">
-                    PERINGATAN: Harus Login Google Dulu untuk Izin Hapus di Database
+                    WARNING: Must login with Google first for database permissions
                   </div>
                 )}
               </div>
@@ -651,7 +660,7 @@ export default function App() {
                   onClick={handleAdminAuth}
                   className="w-full py-4 bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all"
                 >
-                  Konfirmasi PIN
+                  Confirm PIN
                 </button>
               </div>
             </motion.div>
@@ -681,7 +690,7 @@ export default function App() {
                   <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 mx-auto mb-6 shadow-lg shadow-blue-500/10">
                     <UserIcon size={32} className="animate-pulse" />
                   </div>
-                  <h3 className="font-serif text-2xl font-bold mb-2">Login Terlebih Dahulu</h3>
+                  <h3 className="font-serif text-2xl font-bold mb-2">Authentication Required</h3>
                   <p className="text-[10px] uppercase tracking-widest text-[#9aaabb] font-black mb-4">AUTHENTICATION_REQUIRED</p>
                   
                   {/* Highlighted exact quote requested by user */}
@@ -699,13 +708,13 @@ export default function App() {
                       }}
                       className="w-full py-4 bg-blue-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                      <UserIcon size={16} /> Login Google Sekarang
+                      <UserIcon size={16} /> Login with Google Now
                     </button>
                     <button 
                       onClick={() => setAuthError(null)}
                       className="w-full py-3.5 bg-gray-50 dark:bg-gray-800 text-[#6b7d91] dark:text-gray-400 rounded-2xl text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                     >
-                      Tutup
+                      Close
                     </button>
                   </div>
                 </>
@@ -714,7 +723,7 @@ export default function App() {
                   <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center text-red-500 mx-auto mb-6 shadow-lg shadow-red-500/10">
                     <ShieldAlert size={32} className="animate-bounce" />
                   </div>
-                  <h3 className="font-serif text-2xl font-bold mb-2">Akses Ditolak</h3>
+                  <h3 className="font-serif text-2xl font-bold mb-2">Access Denied</h3>
                   <p className="text-[10px] uppercase tracking-widest text-[#9aaabb] font-black mb-4">ADMINISTRATOR_ONLY</p>
                   
                   {/* Highlighted exact quote requested by user */}
@@ -732,17 +741,76 @@ export default function App() {
                       }}
                       className="w-full py-4 bg-red-500 text-white rounded-2xl text-sm font-bold shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                      <ShieldCheck size={16} /> Aktifkan Kunci Admin
+                      <ShieldCheck size={16} /> Unlock Admin Access
                     </button>
                     <button 
                       onClick={() => setAuthError(null)}
                       className="w-full py-3.5 bg-gray-50 dark:bg-gray-800 text-[#6b7d91] dark:text-gray-400 rounded-2xl text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                     >
-                      Tutup
+                      Close
                     </button>
                   </div>
                 </>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Beautiful Custom App Alert Modal (Ganti alert Kasar) */}
+      <AnimatePresence>
+        {appAlert && (
+          <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAppAlert(null)}
+              className="absolute inset-0 bg-black/70 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-sm rounded-[32px] p-8 shadow-2xl border border-blue-50 dark:border-white/5 overflow-hidden text-center z-10 animate-in zoom-in-95 duration-200"
+            >
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg leading-none ${
+                appAlert.type === 'error' 
+                  ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-500 shadow-rose-500/10' 
+                  : appAlert.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500 shadow-emerald-500/10'
+                  : 'bg-blue-50 dark:bg-blue-900/20 text-blue-500 shadow-blue-500/10'
+              }`}>
+                {appAlert.type === 'error' ? (
+                  <ShieldAlert size={32} className="animate-bounce" />
+                ) : appAlert.type === 'success' ? (
+                  <ShieldCheck size={32} />
+                ) : (
+                  <Bell size={32} className="animate-pulse" />
+                )}
+              </div>
+
+              <h3 className="font-serif text-2xl font-bold mb-2 text-slate-850 dark:text-white leading-tight">{appAlert.title}</h3>
+              <p className="text-[9px] uppercase tracking-[0.3em] text-[#9aaabb] font-black mb-4">{appAlert.type ? `SYSTEM_${appAlert.type.toUpperCase()}` : 'SYSTEM_NOTIFICATION'}</p>
+              
+              <div className="my-5 p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800/40">
+                <p className="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-350 leading-relaxed font-sans text-center">
+                  {appAlert.message}
+                </p>
+              </div>
+
+              <button 
+                onClick={() => setAppAlert(null)}
+                className={`w-full py-4 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${
+                  appAlert.type === 'error'
+                    ? 'bg-rose-500 hover:bg-rose-650 shadow-rose-500/20'
+                    : appAlert.type === 'success'
+                    ? 'bg-emerald-500 hover:bg-emerald-650 shadow-emerald-500/20'
+                    : 'bg-blue-500 hover:bg-blue-650 shadow-blue-500/20'
+                }`}
+              >
+                I Understand
+              </button>
             </motion.div>
           </div>
         )}

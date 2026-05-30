@@ -41,6 +41,12 @@ service cloud.firestore {
       }
     }
 
+    // Real-time Presence tracking for Shared Notes
+    match /note_presence/{id} {
+      allow read: if true;
+      allow write: if isMember();
+    }
+
     // Absen / Attendance Tables
     match /absenTables/{tableId} {
       allow read: if true;
@@ -86,10 +92,20 @@ service cloud.firestore {
     match /polls/{id} {
       allow read: if true;
       allow write: if isMember();
+
+      match /options/{optionId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
     }
     match /memories/{id} {
       allow read: if true;
       allow write: if isMember();
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow write: if isMember();
+      }
     }
 
     // Security & Auth

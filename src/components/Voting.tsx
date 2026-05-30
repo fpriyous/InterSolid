@@ -157,7 +157,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
               <div className="flex items-start justify-between mb-6 md:mb-8 gap-4 px-1">
                 <div>
                   <h3 className="font-serif text-lg md:text-2xl font-bold leading-tight">{p.question}</h3>
-                  <p className="text-[10px] md:text-xs text-slate-400 mt-2 uppercase font-black tracking-[0.2em]">{p.totalVotes} Suara Masuk</p>
+                  <p className="text-[10px] md:text-xs text-slate-400 mt-2 uppercase font-black tracking-[0.2em]">{p.totalVotes} Votes Cast</p>
                 </div>
                 {isAdmin && (
                   <button 
@@ -201,7 +201,7 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
               
               {hasVoted[p.id] && (
                 <div className="mt-4 pt-4 border-t border-gray-50 dark:border-gray-800 flex items-center gap-2 text-green-500 text-[10px] font-bold uppercase">
-                  <CheckCircle2 size={12}/> Anda sudah memberikan suara untuk sesi ini
+                  <CheckCircle2 size={12}/> You have already cast your vote for this session
                 </div>
               )}
             </div>
@@ -209,33 +209,33 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
         ) : (
           <div className="bg-white dark:bg-[#1a252f] rounded-2xl border border-blue-100 dark:border-blue-900/30 p-20 text-center shadow-sm">
             <Vote size={48} className="mx-auto mb-4 text-blue-100" />
-            <p className="text-sm text-gray-400 font-medium">Belum ada sesi voting aktif.</p>
+            <p className="text-sm text-gray-400 font-medium">No active voting sessions yet.</p>
           </div>
         )}
       </div>
 
       <div className="space-y-6">
         <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-blue-100 dark:border-blue-900/10 p-6 md:p-8 shadow-sm">
-          <h4 className="font-serif text-lg font-bold mb-6">Buat Voting Baru</h4>
+          <h4 className="font-serif text-lg font-bold mb-6">Create New Vote</h4>
           {user ? (
             <div className="space-y-5">
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Kueri / Pertanyaan</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Query / Question</label>
                 <input 
                   type="text" 
-                  placeholder="Apa yang ingin divoting?" 
+                  placeholder="What would you like to vote on?" 
                   value={newPoll.question}
                   onChange={e => setNewPoll({...newPoll, question: e.target.value})}
                   className="w-full px-5 py-3 text-sm rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500/10 transition-all placeholder:text-slate-300"
                 />
               </div>
               <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Opsi Jawaban</label>
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-1.5 ml-1">Answer Options</label>
                 {newPoll.options.map((opt, i) => (
                   <div key={i} className="flex gap-2 group">
                     <input 
                       type="text" 
-                      placeholder={`Opsi ke-${i + 1}`}
+                      placeholder={`Option ${i + 1}`}
                       value={opt}
                       onChange={e => {
                         const newOpts = [...newPoll.options];
@@ -253,20 +253,20 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
                   onClick={() => setNewPoll({...newPoll, options: [...newPoll.options, '']})}
                   className="w-full py-4 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-500 hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2"
                 >
-                  <Plus size={14} strokeWidth={3}/> Tambah Opsi Lain
+                  <Plus size={14} strokeWidth={3}/> Add Another Option
                 </button>
               </div>
               <button 
                 onClick={addPoll}
                 className="w-full py-4 bg-blue-600 text-white rounded-[24px] text-xs font-black uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/20 active:scale-95"
               >
-                Luncurkan Sekarang
+                Launch Now
               </button>
             </div>
           ) : (
             <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl">
               <Lock size={20} className="mx-auto mb-2 text-gray-300" />
-              <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login Google untuk membuat voting</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login with Google to create a vote</p>
             </div>
           )}
         </div>
@@ -292,21 +292,21 @@ export default function Voting({ isAdmin, user }: { isAdmin: boolean, user: User
               <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Trash2 className="text-red-500" size={32} />
               </div>
-              <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Sesi voting dan seluruh data suara akan dihapus</p>
+              <h3 className="font-serif text-2xl font-bold mb-2">Delete Vote?</h3>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">The voting session and all cast ballots will be permanently deleted</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 
                   onClick={() => setConfirmId(null)}
-                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+                  className="py-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all shadow-sm"
                 >
-                  faqeee
+                  Cancel
                 </button>
                 <button 
                   onClick={() => confirmId && deletePoll(confirmId)}
-                  className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
+                  className="py-3 bg-red-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
                 >
-                  reyal
+                  Permanently Delete
                 </button>
               </div>
             </motion.div>

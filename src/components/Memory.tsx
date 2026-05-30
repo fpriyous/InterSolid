@@ -81,11 +81,11 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
       await addDoc(collection(db, 'memories', memoryId, 'comments'), {
         text: commentText,
         userId: user.uid,
-        userName: user.displayName || 'Anonim',
+        userName: user.displayName || 'Anonymous',
         userPhoto: user.photoURL,
         createdAt: Timestamp.now()
       });
-      logPortalActivity('memory_comment', `Komentar di kenangan`, user);
+      logPortalActivity('memory_comment', `Comment on memory`, user);
     } catch (error: any) {
       console.error('Error adding comment:', error);
       handleFirestoreError(error, OperationType.CREATE, `memories/${memoryId}/comments`);
@@ -97,7 +97,7 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
   return (
     <div className="flex flex-col h-full max-h-[300px] md:max-h-[400px] bg-black/20 rounded-2xl md:rounded-3xl overflow-hidden border border-white/5">
       <div className="p-3 md:p-4 border-b border-white/5 bg-white/5">
-        <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[2px] text-blue-400">Diskusi Kenangan</h4>
+        <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[2px] text-blue-400">Memory Discussion</h4>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
@@ -108,7 +108,7 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
         ) : comments.length === 0 ? (
           <div className="text-center py-8 opacity-30">
             <MessageCircle size={32} className="mx-auto mb-2" />
-            <p className="text-[10px] font-bold uppercase">Belum ada komentar</p>
+            <p className="text-[10px] font-bold uppercase">No comments yet</p>
           </div>
         ) : (
           comments.map((comment) => (
@@ -118,7 +118,7 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
                 <div className="flex items-center gap-2 mb-1">
                    <span className="text-[10px] font-bold text-gray-400">{comment.userName}</span>
                    <span className="text-[8px] text-gray-600 font-medium">
-                     {comment.createdAt?.toDate?.().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                     {comment.createdAt?.toDate?.().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                    </span>
                 </div>
                 <p className="text-xs text-white/80 leading-relaxed bg-white/5 p-3 rounded-2xl rounded-tl-none">
@@ -136,7 +136,7 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
             type="text"
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Tulis pendapatmu..."
+            placeholder="Write a comment..."
             className="w-full bg-black/40 border border-white/10 rounded-2xl py-3 pl-4 pr-12 text-xs text-white outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
           />
           <button 
@@ -314,11 +314,11 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
               console.log("[Sync] Creating missing calendar entry for memory:", memory.id);
               try {
                 const eventRef = await addDoc(collection(db, 'events'), {
-                  title: memory.title || 'Momen Berharga',
+                  title: memory.title || 'Precious Moment',
                   genre: 'memory',
                   date: memory.displayDate,
                   time: '',
-                  note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`,
+                  note: memory.caption || `A memory shared by ${memory.userName}`,
                   authorId: memory.userId,
                   createdAt: Timestamp.now(),
                   memoryUrl: memory.url,
@@ -338,8 +338,8 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                 console.log("[Sync] Updating calendar date/title for memory:", memory.id);
                 updateOps.push(updateDoc(doc(db, 'events', existingEventIds[0]), {
                   date: memory.displayDate,
-                  title: memory.title || 'Momen Berharga',
-                  note: memory.caption || `Kenangan yang dibagikan oleh ${memory.userName}`
+                  title: memory.title || 'Precious Moment',
+                  note: memory.caption || `A memory shared by ${memory.userName}`
                 }));
               }
             }
@@ -396,7 +396,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
     if (!file) return;
 
     if (file.size > 25 * 1024 * 1024) { // 25MB max raw
-      alert('File terlalu besar! Maksimal 25MB agar tidak gagal di tengah jalan.');
+      (window as any).showAppAlert?.('File Too Large', 'The file is too large! Maximum limit for images/videos is 25MB to prevent upload interruption.', 'info');
       return;
     }
 
@@ -424,12 +424,12 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
     if (!file) return;
 
     if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-      alert('Hanya file gambar atau video yang diperbolehkan!');
+      (window as any).showAppAlert?.('Type Rejected', 'Only image files (JPG, PNG, WebP) or video files (MP4, WebM) are allowed!', 'info');
       return;
     }
 
     if (file.size > 25 * 1024 * 1024) {
-      alert('File terlalu besar! Maksimal 25MB.');
+      (window as any).showAppAlert?.('File Too Large', 'The file is too large! Maximum limit is 25MB.', 'info');
       return;
     }
 
@@ -502,10 +502,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           });
 
           if (message.toLowerCase().includes("preset")) {
-            throw new Error(`PRESET SALAH: Cloudinary tidak menemukan ID '${uploadPreset}'. 
-            SOLUSI: 
-            1. Pastikan di Cloudinary Settings > Upload, ada preset bernama '${uploadPreset}'.
-            2. Pastikan Tipenya adalah 'Unsigned' (Foto yang kamu kirim tadi sudah benar: intersolid - Unsigned).`);
+            throw new Error(`INCORRECT PRESET: Cloudinary could not find preset ID '${uploadPreset}'. 
+            SOLUTION: 
+            1. Ensure in Cloudinary Settings > Upload, there is a preset named '${uploadPreset}'.
+            2. Make sure its Type is 'Unsigned' (The image you sent is correct: ${uploadPreset} - Unsigned).`);
           }
           throw new Error(message);
         }
@@ -519,12 +519,12 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           type: isImage ? 'image' : 'video',
           url: downloadURL,
           publicId: publicId,
-          title: title || 'Momen Berharga',
+          title: title || 'Precious Moment',
           caption: caption,
           displayDate: displayDate,
           userId: user.uid,
           userEmail: user.email,
-          userName: user.displayName || 'Anonim',
+          userName: user.displayName || 'Anonymous',
           userPhoto: user.photoURL,
           createdAt: Timestamp.now(),
           likes: []
@@ -536,16 +536,16 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           calendarEventId: null
         });
         const memoryId = memoryRef.id;
-        logPortalActivity('memory_upload', `Kenangan: ${memoryData.title}`, user);
+        logPortalActivity('memory_upload', `Memory: ${memoryData.title}`, user);
 
         // Also add to Calendar automatically
         try {
           const eventRef = await addDoc(collection(db, 'events'), {
-            title: title || 'Momen Berharga',
+            title: title || 'Precious Moment',
             genre: 'memory',
             date: displayDate,
             time: '',
-            note: caption || `Kenangan yang dibagikan oleh ${user.displayName || 'Anonim'}`,
+            note: caption || `A memory shared by ${user.displayName || 'Anonymous'}`,
             authorId: user.uid,
             createdAt: Timestamp.now(),
             memoryUrl: downloadURL,
@@ -557,7 +557,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             calendarEventId: eventRef.id
           });
         } catch (calError) {
-          console.error("Gagal sinkronisasi ke kalender:", calError);
+          console.error("Failed to sync to calendar:", calError);
         }
 
         setUploadProgress(100);
@@ -596,7 +596,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
   const handleDelete = async (memory: MemoryItem) => {
     if (!user) return;
-    if (!window.confirm("Hapus kenangan ini? Foto ini juga akan dihapus dari Kalender secara otomatis.")) return;
+    if (!window.confirm("Delete this memory? This photo will also be automatically removed from the Calendar.")) return;
 
     try {
       // 1. Delete from Firestore
@@ -634,7 +634,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       
     } catch (error: any) {
       console.error("Delete memory error:", error);
-      alert('Gagal menghapus: ' + (error.message || "Izin ditolak"));
+      (window as any).showAppAlert?.('Delete Failed', 'Failed to delete class album material: ' + (error.message || "Permission denied by database server"), 'error');
     }
   };
 
@@ -747,14 +747,14 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                 transition={{ delay: 0.1 }}
                 className="font-serif text-5xl md:text-7xl text-white font-bold leading-tight"
                >
-                 Momen <em className="text-blue-500 not-italic">Terbaik</em><br />Kita Bersama
+                 Our <em className="text-blue-500 not-italic">Best</em><br />Moments Together
                </motion.h2>
                <motion.p 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 0.4 }}
                 className="text-white text-xs mt-6 font-medium tracking-wider"
                >
-                 MEMUTAR KILAS BALIK OTOMATIS...
+                 PLAYING RECAP AUTOMATICALLY...
                </motion.p>
             </div>
 
@@ -768,7 +768,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                ) : (
                  <div className="flex flex-col items-center justify-center h-full text-white/20">
                    <ImageIcon size={64} className="mb-4" />
-                   <p className="font-bold uppercase tracking-widest">Belum ada kenangan untuk ditampilkan</p>
+                   <p className="font-bold uppercase tracking-widest">No memories to display yet</p>
                  </div>
                )}
             </div>
@@ -835,14 +835,14 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                       <img src={activeMemory.userPhoto} className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl border border-blue-500/30" alt="" />
                       <div className="text-left">
                          <p className="text-xs md:text-sm font-black text-white uppercase tracking-[2px]">{activeMemory.userName}</p>
-                         <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">{activeMemory.createdAt?.toDate ? activeMemory.createdAt.toDate().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Baru Saja'}</p>
+                         <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-wider">{activeMemory.createdAt?.toDate ? activeMemory.createdAt.toDate().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Just Now'}</p>
                       </div>
                    </div>
 
                    <div className="space-y-2 md:space-y-3">
-                      <h4 className="text-lg md:text-xl font-serif font-bold text-white leading-tight">{activeMemory.title || 'Momen Berharga'}</h4>
+                      <h4 className="text-lg md:text-xl font-serif font-bold text-white leading-tight">{activeMemory.title || 'Precious Moment'}</h4>
                       <p className="text-xs md:text-sm text-white/70 font-medium italic leading-relaxed">
-                        "{activeMemory.caption || 'Kenangan manis tanpa kata-kata'}"
+                        "{activeMemory.caption || 'A beautiful memory with no words'}"
                       </p>
                    </div>
 
@@ -890,22 +890,22 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h3 className="font-serif text-3xl font-bold">Galeri Memories</h3>
-          <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold opacity-60">Dokumentasi perjalanan & kebersamaan kita</p>
+          <h3 className="font-serif text-3xl font-bold">Class Memories</h3>
+          <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold opacity-60">Documentation of our shared journey & moments</p>
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex bg-gray-100 dark:bg-gray-800/50 p-1 rounded-2xl border border-gray-200 dark:border-white/5 mr-2">
             <button 
               onClick={() => setViewMode('grid')}
               className={`p-2 rounded-xl transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-500' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Tampilan Grid"
+              title="Grid View"
             >
               <Grid size={18} />
             </button>
             <button 
               onClick={() => setViewMode('warehouse')}
               className={`p-2 rounded-xl transition-all ${viewMode === 'warehouse' ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-500' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Gudang Memories (3D)"
+              title="Memory Warehouse (3D)"
             >
               <Box size={18} />
             </button>
@@ -915,13 +915,13 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             onClick={() => setStageMode(true)}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 rounded-2xl font-bold text-xs hover:bg-indigo-500 hover:text-white transition-all shadow-lg shadow-indigo-500/5 group"
           >
-            <Sparkles size={16} className="group-hover:animate-spin" /> Kilas Memories
+            <Sparkles size={16} className="group-hover:animate-spin" /> Spotlight
           </button>
           <button 
             onClick={() => setShowUpload(true)}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-2xl font-bold text-xs hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
           >
-            <Plus size={16} /> Bagikan Momen
+            <Plus size={16} /> Share Moment
           </button>
         </div>
       </div>
@@ -929,14 +929,14 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       {viewMode === 'warehouse' ? (
         <div className="w-full aspect-[4/3] md:aspect-[21/9] rounded-[40px] overflow-hidden border border-white/5 shadow-2xl relative">
           <div className="absolute top-6 left-6 z-20 flex flex-col gap-1 items-start">
-            <div className="px-4 py-1.5 bg-blue-500 rounded-full text-[8px] font-black uppercase text-white tracking-[2px] shadow-lg shadow-blue-500/40">Gudang Memories</div>
-            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mt-1 ml-4">Putar Dunia Untuk Mencari Kenangan</p>
+            <div className="px-4 py-1.5 bg-blue-500 rounded-full text-[8px] font-black uppercase text-white tracking-[2px] shadow-lg shadow-blue-500/40">Memory Warehouse</div>
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mt-1 ml-4">Spin the globe to explore memories</p>
           </div>
           <InfiniteMenu 
             items={memories.map(m => ({
               image: m.url,
-              title: m.title || 'Momen Berharga',
-              description: m.displayDate ? new Date(m.displayDate).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : m.caption,
+              title: m.title || 'Precious Moment',
+              description: m.displayDate ? new Date(m.displayDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : m.caption,
               id: m.id,
               raw: m
             }))} 
@@ -972,7 +972,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                     <img src={m.userPhoto} className="w-8 h-8 rounded-full border-2 border-white/50" alt="" />
                     <div className="text-white">
                       <p className="text-[10px] font-bold uppercase tracking-wider leading-none mb-1">{m.userName}</p>
-                      <p className="text-[9px] opacity-70">{m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString('id-ID') : 'Baru Saja'}</p>
+                      <p className="text-[9px] opacity-70">{m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString('en-US') : 'Just Now'}</p>
                     </div>
                   </div>
                 </div>
@@ -992,7 +992,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
               <div className="p-6">
                 <p className="text-sm font-medium mb-4 line-clamp-2 italic text-gray-700 dark:text-gray-300">
-                  "{m.caption || 'Tanpa keterangan'}"
+                  "{m.caption || 'No description'}"
                 </p>
                 <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-gray-800">
                   <div className="flex items-center gap-3">
@@ -1027,13 +1027,13 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
             <ImageIcon size={40} className="text-blue-500" />
           </div>
-          <h4 className="font-serif text-2xl font-bold mb-2">Belum Ada Memories</h4>
-          <p className="text-sm text-gray-400 mb-8 max-w-xs mx-auto italic">Jadilah yang pertama membagikan momen berharga kelas kita!</p>
+          <h4 className="font-serif text-2xl font-bold mb-2">No Memories Shared Yet</h4>
+          <p className="text-sm text-gray-400 mb-8 max-w-xs mx-auto italic">Be the first to share a precious moment with our class!</p>
           <button 
             onClick={() => setShowUpload(true)}
             className="px-8 py-3 bg-blue-500 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-500/20"
           >
-            Mulai Bagikan
+            Start Sharing
           </button>
         </div>
       )}
@@ -1057,7 +1057,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             >
               <div className="p-8">
                 <div className="flex justify-between items-center mb-8">
-                  <h3 className="font-serif text-2xl font-bold">Bagikan Memories</h3>
+                  <h3 className="font-serif text-2xl font-bold">Share a Memory</h3>
                   {!uploading && (
                     <button 
                       onClick={() => setShowUpload(false)} 
@@ -1104,8 +1104,8 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                         <Upload size={32} />
                       </div>
                       <div className="text-center">
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Klik / Taruh File Disini</p>
-                        <p className="text-[10px] text-gray-400 mt-1 uppercase">Maksimal 20MB (Foto/Video Pendek)</p>
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Click or Drag File Here</p>
+                        <p className="text-[10px] text-gray-400 mt-1 uppercase">Max 20MB (Images or Short Videos)</p>
                       </div>
                     </>
                   )}
@@ -1120,10 +1120,10 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Judul Memori</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Memory Title</label>
                     <input 
                       type="text"
-                      placeholder="Contoh: Bukber Kelas..."
+                      placeholder="Example: Class Dinner..."
                       value={title}
                       onChange={e => setTitle(e.target.value)}
                       disabled={uploading}
@@ -1131,7 +1131,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Tanggal Kejadian</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Event Date</label>
                     <input 
                       type="date"
                       value={displayDate}
@@ -1143,9 +1143,9 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Deskripsi / Cerita</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block ml-2">Description / Story</label>
                   <textarea 
-                    placeholder="Tuliskan cerita singkat dibalik momen ini..."
+                    placeholder="Write a short story about this moment..."
                     value={caption}
                     onChange={e => setCaption(e.target.value)}
                     disabled={uploading}
@@ -1158,7 +1158,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                     <div className="flex gap-2">
                        <ShieldAlert size={16} className="text-red-500 shrink-0" />
                        <div className="space-y-1">
-                         <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Gagal Mengunggah</p>
+                         <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Upload Failed</p>
                          <p className="text-xs text-red-600/80 dark:text-red-400 leading-relaxed font-medium">{error}</p>
                        </div>
                     </div>
@@ -1178,12 +1178,12 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                     {uploading ? (
                       <>
                         <Loader2 className="animate-spin" size={18} />
-                        {uploadStatus === 'compressing' ? `Mengompres... (${uploadProgress}%)` : `Mengunggah... (${uploadProgress}%)`}
+                        {uploadStatus === 'compressing' ? `Compressing... (${uploadProgress}%)` : `Uploading... (${uploadProgress}%)`}
                       </>
                     ) : (
                       <>
                         <Upload size={18} />
-                        Publikasikan Sekarang
+                        Publish Now
                       </>
                     )}
                   </div>
@@ -1216,7 +1216,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                 <Trash2 className="text-red-500" size={32} />
               </div>
               <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Kenangan ini akan dihapus permanen</p>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">This memory will be permanently deleted</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 

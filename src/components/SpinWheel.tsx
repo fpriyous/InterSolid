@@ -181,7 +181,7 @@ export default function SpinWheel({ user }: { user: User | null }) {
           <div className="text-center h-12 flex flex-col items-center justify-center">
             {winner ? (
               <div className="animate-in zoom-in duration-300">
-                <span className="text-[10px] text-slate-400 block uppercase font-black tracking-[0.2em] mb-1">Terpilih:</span>
+                <span className="text-[10px] text-slate-400 block uppercase font-black tracking-[0.2em] mb-1">Selected:</span>
                 <span className="font-serif text-xl md:text-3xl font-bold text-blue-600 drop-shadow-sm">{winner}</span>
               </div>
             ) : spinning ? (
@@ -193,10 +193,10 @@ export default function SpinWheel({ user }: { user: User | null }) {
                      className="w-8 h-full bg-blue-500" 
                    />
                 </div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Memutar Takdir...</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Spreading Fortune...</span>
               </div>
             ) : (
-              <span className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-widest opacity-60">Klik Putar Untuk Memulai!</span>
+              <span className="text-[10px] md:text-xs text-slate-400 font-bold uppercase tracking-widest opacity-60">Click Spin to Start!</span>
             )}
           </div>
 
@@ -205,14 +205,14 @@ export default function SpinWheel({ user }: { user: User | null }) {
             disabled={spinning || members.length < 2}
             className="w-full py-4 md:py-5 bg-blue-600 text-white rounded-2xl md:rounded-[24px] font-black text-sm md:text-base uppercase tracking-[0.2em] shadow-xl shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
           >
-            Putar Sekarang
+            Spin Now
           </button>
         </div>
 
         <div className="w-full bg-white dark:bg-[#1a252f] p-6 md:p-8 rounded-[32px] border border-blue-100 dark:border-blue-900/30 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <div className="flex items-center gap-3">
-              <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Bagi Kelompok:</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Split Groups:</label>
               <input 
                 type="number" 
                 min={2} 
@@ -228,16 +228,16 @@ export default function SpinWheel({ user }: { user: User | null }) {
                 onClick={splitGroups}
                 className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/10"
               >
-                Bagi
+                Split
               </button>
             </div>
-            <button onClick={() => setGroups([])} className="text-[9px] uppercase font-black text-slate-300 hover:text-rose-500 tracking-widest transition-colors w-fit">Reset Kelompok</button>
+            <button onClick={() => setGroups([])} className="text-[9px] uppercase font-black text-slate-300 hover:text-rose-500 tracking-widest transition-colors w-fit">Reset Groups</button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             {groups.map((group, i) => (
               <div key={i} className="bg-slate-50/50 dark:bg-slate-900/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-2">Grup {String(i + 1).padStart(2, '0')}</span>
+                <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-2">Group {String(i + 1).padStart(2, '0')}</span>
                 <div className="flex flex-wrap gap-1.5">
                   {group.map(m => (
                     <span key={m} className="px-2 py-1 bg-white dark:bg-slate-800 rounded-md text-[9px] font-bold shadow-sm border border-slate-100 dark:border-slate-700 truncate max-w-full">{m}</span>
@@ -252,14 +252,14 @@ export default function SpinWheel({ user }: { user: User | null }) {
       <div className="space-y-6">
         <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-sm">Daftar Anggota</h4>
+            <h4 className="font-bold text-sm">Members List</h4>
             <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full text-gray-500">{members.length}</span>
           </div>
           
           <div className="flex gap-2 mb-4">
             <input 
               type="text" 
-              placeholder="Tambahkan nama..." 
+              placeholder="Add name..." 
               value={newMember}
               onChange={e => setNewMember(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && setMembers([...members, newMember])}
@@ -290,7 +290,7 @@ export default function SpinWheel({ user }: { user: User | null }) {
           </div>
 
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex gap-2">
-            <button onClick={() => setConfirmDelete({ type: 'all' })} className="flex-1 py-1.5 text-[10px] font-bold text-gray-400 hover:bg-gray-50 rounded-lg">Kosongkan</button>
+            <button onClick={() => setConfirmDelete({ type: 'all' })} className="flex-1 py-1.5 text-[10px] font-bold text-gray-400 hover:bg-gray-50 rounded-lg">Clear All</button>
         <button 
           onClick={() => setMembers([
             'Bhintank Mi\'thori Danial Firdaus', 'Dimas Ardiansyah Nur Ismail', 'Fatin Atikah Sandy', 
@@ -305,7 +305,7 @@ export default function SpinWheel({ user }: { user: User | null }) {
           ])} 
           className="flex-1 py-1.5 text-[10px] font-bold text-blue-500 hover:bg-blue-50 rounded-lg uppercase tracking-wider"
         >
-          Isi Nama Kelas
+          Fill Class Names
         </button>
           </div>
         </div>
@@ -321,8 +321,8 @@ export default function SpinWheel({ user }: { user: User | null }) {
             <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
             <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
               {confirmDelete.type === 'all' 
-                ? 'Seluruh daftar anggota akan dikosongkan' 
-                : 'Pilihan ini akan dihapus dari daftar'}
+                ? 'All members will be cleared' 
+                : 'This member will be removed from the list'}
             </p>
             
             <div className="grid grid-cols-2 gap-3">

@@ -43,8 +43,14 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
       (window as any).showAuthError?.('unauthenticated');
       return;
     }
-    if (!form.title.trim()) return alert('Judul tidak boleh kosong');
-    if (!form.content.trim()) return alert('Isi pengumuman tidak boleh kosong');
+    if (!form.title.trim()) {
+      (window as any).showAppAlert?.('Input Kurang', 'Judul pengumuman tidak boleh dibiarkan kosong!', 'info');
+      return;
+    }
+    if (!form.content.trim()) {
+      (window as any).showAppAlert?.('Input Kurang', 'Isi teks pengumuman tidak boleh dibiarkan kosong!', 'info');
+      return;
+    }
     
     try {
       if (editingId) {
@@ -116,12 +122,12 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
               onClick={() => setIsAdding(true)}
               className="w-full py-4 md:py-6 border-2 border-dashed border-blue-200 dark:border-blue-900/40 rounded-xl md:rounded-2xl flex items-center justify-center gap-3 text-blue-500 text-xs md:text-sm font-black uppercase tracking-widest hover:bg-blue-50 transition-all active:scale-95"
             >
-              <Plus size={20} strokeWidth={3}/> Posting Pengumuman
+              <Plus size={20} strokeWidth={3}/> Post Announcement
             </button>
           ) : (
             <div className="space-y-4 md:space-y-6 animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between px-1">
-                <h4 className="font-serif text-lg md:text-xl font-bold">{editingId ? 'Edit' : 'Buat'} Pengumuman</h4>
+                <h4 className="font-serif text-lg md:text-xl font-bold">{editingId ? 'Edit' : 'Create'} Announcement</h4>
                 <button onClick={() => { setIsAdding(false); setEditingId(null); setForm({ title: '', content: '', priority: 'medium' }); }} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
                   <X size={20} />
                 </button>
@@ -129,7 +135,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input 
                   type="text" 
-                  placeholder="Judul Pengumuman..." 
+                  placeholder="Announcement Title..." 
                   value={form.title}
                   onChange={e => setForm({...form, title: e.target.value})}
                   className="px-4 py-3 text-sm rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500/10 placeholder:text-gray-300"
@@ -139,24 +145,24 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
                   onChange={e => setForm({...form, priority: e.target.value as any})}
                   className="px-4 py-3 text-sm rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500/10"
                 >
-                  <option value="low">Prioritas: Rendah</option>
-                  <option value="medium">Prioritas: Sedang</option>
-                  <option value="high">Prioritas: Penting!</option>
+                  <option value="low">Priority: Low</option>
+                  <option value="medium">Priority: Medium</option>
+                  <option value="high">Priority: High!</option>
                 </select>
               </div>
               <textarea 
-                placeholder="Tuliskan detail pengumuman..." 
+                placeholder="Write announcement details..." 
                 value={form.content}
                 onChange={e => setForm({...form, content: e.target.value})}
                 className="w-full px-4 py-3 text-sm rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900 outline-none h-32 md:h-40 resize-none focus:ring-2 focus:ring-blue-500/10 placeholder:text-gray-300"
               />
               <div className="flex flex-col sm:flex-row gap-3">
-                <button onClick={() => { setIsAdding(false); setEditingId(null); setForm({ title: '', content: '', priority: 'medium' }); }} className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600">Batal</button>
+                <button onClick={() => { setIsAdding(false); setEditingId(null); setForm({ title: '', content: '', priority: 'medium' }); }} className="py-3 px-4 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600">Cancel</button>
                 <button 
                   onClick={addAnnouncement} 
                   className="flex-1 py-3 px-6 bg-blue-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:bg-blue-600 transition-all hover:-translate-y-1 active:scale-95"
                 >
-                  {editingId ? 'Simpan Perubahan' : 'Posting Sekarang'}
+                  {editingId ? 'Save Changes' : 'Post Now'}
                 </button>
               </div>
             </div>
@@ -164,7 +170,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
         ) : (
           <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl flex flex-col items-center gap-2">
             <Lock size={20} className="text-gray-300" />
-            <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login Google untuk posting pengumuman</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-tight">Login with Google to post announcements</p>
           </div>
         )}
       </div>
@@ -207,7 +213,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
         {announcements.length === 0 && (
           <div className="text-center py-20 opacity-30">
             <Bell size={48} className="mx-auto mb-4" />
-            <p className="text-sm">Tidak ada pengumuman baru.</p>
+            <p className="text-sm">No new announcements.</p>
           </div>
         )}
       </div>
@@ -233,7 +239,7 @@ export default function Pengumuman({ isAdmin, user }: { isAdmin: boolean, user: 
                 <Trash2 className="text-red-500" size={32} />
               </div>
               <h3 className="font-serif text-2xl font-bold mb-2">reyall or faqeee?</h3>
-              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">Pengumuman ini akan dihapus permanen</p>
+              <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">This announcement will be permanently deleted</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <button 
