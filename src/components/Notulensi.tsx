@@ -5,7 +5,7 @@ import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timesta
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { User } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Image from '@tiptap/extension-image';
@@ -1182,7 +1182,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
       {/* Area Kerja Editor / Viewer */}
       <div className={`${isAdding ? 'lg:col-span-4' : 'lg:col-span-3'}`}>
         {isAdding ? (
-          <div className="bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
+          <div className="flex flex-col h-[calc(100vh-140px)] min-h-[580px] bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
             {/* Header Editor - Minimalist Google Docs Style */}
               <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a252f] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -1235,7 +1235,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                         className="relative group/avatar"
                       >
                         <div 
-                          title={`${u.name} ${u.isTyping ? '(Sedang mengetik...)' : ''}`}
+                          title={`${u.name} ${u.isTyping ? '(Typing...)' : ''}`}
                           className="w-9 h-9 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-black text-white relative transition-transform hover:scale-110 hover:z-10 shadow-sm cursor-help"
                           style={{ backgroundColor: u.color }}
                         >
@@ -1252,7 +1252,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                         </div>
                         {/* Hover Tooltip/Label */}
                         <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[9px] font-bold rounded opacity-0 group-hover/avatar:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 uppercase tracking-widest shadow-xl">
-                          {u.name} {u.isTyping ? '• Sedang Mengetik' : ''}
+                          {u.name} {u.isTyping ? '• Typing...' : ''}
                         </div>
                       </motion.div>
                     ))}
@@ -1436,11 +1436,11 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                                     e.stopPropagation();
                                     
                                     if (!editor || editor.isDestroyed || !editor.commands || !(editor as any).extensionManager) {
-                                      (window as any).showAppAlert?.('Editor Error', 'Mesin real-time editor belum siap, silakan tunggu sesaat.', 'info');
+                                      (window as any).showAppAlert?.('Editor Error', 'Real-time editor engine is not ready, please wait a moment.', 'info');
                                       return;
                                     }
 
-                                    const confirmed = window.confirm("Pulihkan ke versi ini?");
+                                    const confirmed = window.confirm("Restore to this version?");
                                     if (!confirmed) return;
 
                                      try {
@@ -1470,10 +1470,10 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                                       
                                       setShowHistory(false);
                                       setSaveStatus('saved');
-                                      (window as any).showAppAlert?.('Pulih Berhasil', 'Catatan notulensi berhasil dipulihkan secara real-time!', 'success');
+                                      (window as any).showAppAlert?.('Restore Successful', 'The document has been successfully restored in real-time!', 'success');
                                     } catch (err) {
                                       console.error(err);
-                                      (window as any).showAppAlert?.('Gagal Pulih', 'Gagal memulihkan versi catatan rapat sebelumnya.', 'error');
+                                      (window as any).showAppAlert?.('Restore Failed', 'Failed to restore the previous version of this document.', 'error');
                                     }
                                   }}
                                   className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95"
@@ -1500,6 +1500,148 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   <div className="page-simulation-container max-w-[850px] mx-auto my-6 md:my-12 bg-white dark:bg-[#0f172a] shadow-[0_2px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-xl min-h-[1056px] relative p-10 md:p-20 border border-gray-200/40 dark:border-blue-900/10 transition-all duration-500 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:border-blue-700/20">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
                       <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-headings:tracking-tight prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-p:leading-relaxed selection:bg-blue-100 dark:selection:bg-blue-900/40">
+                        {editor && (
+                          <BubbleMenu 
+                            editor={editor} 
+                            tippyOptions={{ 
+                              duration: 150,
+                            }}
+                          >
+                            <div className="flex items-center gap-1 p-1 bg-slate-900/95 dark:bg-slate-950/95 border border-slate-800 text-white rounded-2xl shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 z-50">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().toggleBold().run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive('bold') ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Bold (Ctrl+B)"
+                              >
+                                <Bold size={13} strokeWidth={3} />
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().toggleItalic().run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive('italic') ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Italic (Ctrl+I)"
+                              >
+                                <Italic size={13} strokeWidth={3} />
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().toggleUnderline().run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive('underline') ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Underline (Ctrl+U)"
+                              >
+                                <UnderlineIcon size={13} strokeWidth={3} />
+                              </button>
+
+                              <div className="w-px h-4 bg-slate-800 mx-1 self-center" />
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().toggleHeading({ level: 1 }).run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive('heading', { level: 1 }) ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Heading 1"
+                              >
+                                <Heading1 size={13} strokeWidth={2.5} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().toggleHeading({ level: 2 }).run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive('heading', { level: 2 }) ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Heading 2"
+                              >
+                                <Heading2 size={13} strokeWidth={2.5} />
+                              </button>
+
+                              <div className="w-px h-4 bg-slate-800 mx-1 self-center" />
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().setTextAlign('left').run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive({ textAlign: 'left' }) ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Align Left"
+                              >
+                                <AlignLeft size={13} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().setTextAlign('center').run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive({ textAlign: 'center' }) ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Align Center"
+                              >
+                                <AlignCenter size={13} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                }}
+                                onClick={() => {
+                                  if (!editor || editor.isDestroyed) return;
+                                  editor.chain().focus().setTextAlign('right').run();
+                                }}
+                                className={`p-2 rounded-xl transition-all ${editor.isActive({ textAlign: 'right' }) ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                                title="Align Right"
+                              >
+                                <AlignRight size={13} />
+                              </button>
+                            </div>
+                          </BubbleMenu>
+                        )}
                         <EditorContent editor={editor} />
                       </div>
                     ) : (
@@ -1527,7 +1669,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                          <div className="flex items-center gap-1.5">
                             <div className={`w-1.5 h-1.5 rounded-full ${pollSyncActive && !isConnected ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
                             <span className="text-[8px] font-black uppercase tracking-widest text-gray-400">
-                               {pollSyncActive && !isConnected ? 'Sinkronisasi Cloud' : 'Koneksi Langsung'}
+                               {pollSyncActive && !isConnected ? 'Cloud Sync' : 'Direct Connection'}
                             </span>
                          </div>
                       </div>
@@ -1537,7 +1679,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 opacity-10 hover:opacity-100 transition-opacity">
                       <div className="flex items-center gap-2">
                          <div className="h-px w-8 bg-gray-300" />
-                         <span className="text-[8px] font-black uppercase tracking-[4px] text-gray-400">Halaman 1</span>
+                         <span className="text-[8px] font-black uppercase tracking-[4px] text-gray-400">Page 1</span>
                          <div className="h-px w-8 bg-gray-300" />
                       </div>
                     </div>
