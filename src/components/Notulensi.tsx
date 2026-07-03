@@ -337,6 +337,8 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
   const [isConnected, setIsConnected] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [showExportMenuEditor, setShowExportMenuEditor] = useState(false);
+  const [showExportMenuReader, setShowExportMenuReader] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
@@ -575,7 +577,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[500px] p-6 leading-relaxed text-gray-700 dark:text-gray-200 outline-none select-text cursor-text',
+        class: 'prose prose-slate lg:prose-lg dark:prose-invert max-w-none focus:outline-none min-h-[700px] py-4 leading-relaxed outline-none select-text cursor-text font-sans antialiased prose-headings:font-serif prose-headings:tracking-tight prose-headings:text-slate-900 dark:prose-headings:text-slate-50 prose-p:text-[#374151] dark:prose-p:text-[#D1D5DB] prose-p:leading-relaxed selection:bg-amber-100 dark:selection:bg-amber-950/50',
         style: 'pointer-events: auto !important;'
       },
     },
@@ -1086,24 +1088,205 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
     }
   };
 
-  const exportPDF = () => {
-    if (!noteRef.current) return;
-    const element = noteRef.current;
-    const opt = {
-      margin: 1,
-      filename: `${selectedNote?.title || 'note'}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' as const }
-    };
-    html2pdf().from(element).set(opt).save();
+  const handleExport = async (type: 'pdf' | 'docx', customContent?: string, customTitle?: string) => {
+    const title = customTitle || selectedNote?.title || 'note';
+    // Get HTML content - prioritising editor content if available, fallback to selectedNote content
+    const htmlContent = customContent || (editor && !editor.isDestroyed ? editor.getHTML() : '') || selectedNote?.htmlContent || '';
+
+    if (type === 'pdf') {
+      // Create a hidden iframe for clean, distraction-free PDF generation
+      const iframe = document.createElement('iframe');
+      
+      // Hide the iframe completely off-screen
+      iframe.style.position = 'fixed';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+      iframe.style.width = '800px';
+      iframe.style.height = '1200px';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>${title}</title>
+              <style>
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                  line-height: 1.6;
+                  color: #1e293b;
+                  background: #ffffff;
+                  font-size: 11pt;
+                  padding: 40px;
+                  margin: 0;
+                }
+                h1 {
+                  font-family: Georgia, serif;
+                  font-size: 26pt;
+                  font-weight: bold;
+                  margin-top: 0;
+                  margin-bottom: 24px;
+                  color: #0f172a;
+                  border-bottom: 2px solid #e2e8f0;
+                  padding-bottom: 12px;
+                }
+                h2 {
+                  font-family: Georgia, serif;
+                  font-size: 18pt;
+                  font-weight: bold;
+                  margin-top: 24px;
+                  margin-bottom: 12px;
+                  color: #1e293b;
+                }
+                h3 {
+                  font-size: 14pt;
+                  font-weight: bold;
+                  margin-top: 18px;
+                  margin-bottom: 8px;
+                  color: #334155;
+                }
+                p {
+                  margin-bottom: 16px;
+                  color: #334155;
+                }
+                ul, ol {
+                  margin-bottom: 16px;
+                  padding-left: 24px;
+                }
+                li {
+                  margin-bottom: 8px;
+                  color: #334155;
+                }
+                blockquote {
+                  border-left: 4px solid #cbd5e1;
+                  padding-left: 16px;
+                  margin: 0 0 16px 0;
+                  color: #475569;
+                  font-style: italic;
+                }
+                pre {
+                  background: #f1f5f9;
+                  padding: 12px;
+                  border-radius: 6px;
+                  font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+                  font-size: 9.5pt;
+                  color: #0f172a;
+                  margin-bottom: 16px;
+                  border: 1px solid #e2e8f0;
+                  white-space: pre-wrap;
+                  word-break: break-all;
+                }
+                img {
+                  max-width: 100%;
+                  height: auto;
+                  border-radius: 8px;
+                  margin: 16px 0;
+                }
+                table {
+                  width: 100%;
+                  border-collapse: collapse;
+                  margin-bottom: 16px;
+                }
+                th, td {
+                  border: 1px solid #e2e8f0;
+                  padding: 8px 12px;
+                  text-align: left;
+                }
+                th {
+                  background-color: #f8fafc;
+                  font-weight: bold;
+                }
+              </style>
+              <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+            </head>
+            <body>
+              <h1>${title}</h1>
+              <div>${htmlContent}</div>
+              <script>
+                window.onload = function() {
+                  setTimeout(function() {
+                    const opt = {
+                      margin: [0.75, 0.75, 0.75, 0.75],
+                      filename: "${title.replace(/["'\\]/g, "")}.pdf",
+                      image: { type: 'jpeg', quality: 0.98 },
+                      html2canvas: { scale: 2, useCORS: true },
+                      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                    };
+                    if (window.html2pdf) {
+                      window.html2pdf().from(document.body).set(opt).save()
+                        .then(function() {
+                          window.parent.postMessage({ type: 'PDF_SUCCESS' }, '*');
+                        })
+                        .catch(function(err) {
+                          window.parent.postMessage({ type: 'PDF_ERROR', message: err.toString() }, '*');
+                        });
+                    } else {
+                      window.parent.postMessage({ type: 'PDF_ERROR', message: 'html2pdf library loaded but undefined' }, '*');
+                    }
+                  }, 800);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        iframeDoc.close();
+      }
+
+      // Automatically clean up the iframe node after a safe delay
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          document.body.removeChild(iframe);
+        }
+      }, 15000);
+    } else {
+      // DOCX export
+      const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' "+
+            "xmlns:w='urn:schemas-microsoft-com:office:word' "+
+            "xmlns='http://www.w3.org/TR/REC-html40'>"+
+            "<head><meta charset='utf-8'><title>" + title + "</title><style>"+
+            "body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; padding: 40px; color: #1e293b; background-color: #ffffff; }"+
+            "h1 { font-family: 'Georgia', serif; font-size: 26pt; font-weight: bold; margin-bottom: 20px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }"+
+            "h2 { font-family: 'Georgia', serif; font-size: 20pt; font-weight: bold; margin-top: 24px; margin-bottom: 12px; color: #1e293b; }"+
+            "h3 { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14pt; font-weight: bold; margin-top: 18px; margin-bottom: 8px; color: #334155; }"+
+            "p { margin-bottom: 15px; font-size: 11pt; color: #334155; }"+
+            "ul, ol { margin-bottom: 15px; padding-left: 20px; }"+
+            "li { margin-bottom: 6px; font-size: 11pt; color: #334155; }"+
+            "b, strong { font-weight: bold; color: #0f172a; }"+
+            "i, em { font-style: italic; }"+
+            "u { text-decoration: underline; }"+
+            "blockquote { border-left: 4px solid #cbd5e1; padding-left: 16px; margin-left: 0; margin-bottom: 15px; color: #475569; font-style: italic; }"+
+            "pre { background: #f1f5f9; padding: 12px; border-radius: 6px; font-family: 'Consolas', 'Courier New', monospace; font-size: 9.5pt; color: #0f172a; margin-bottom: 15px; border: 1px solid #e2e8f0; }"+
+            "img { max-width: 100%; border-radius: 8px; margin: 15px 0; }"+
+            "</style></head><body>" +
+            "<h1>" + title + "</h1>" + htmlContent + "</body></html>";
+      
+      const fileDownload = document.createElement("a");
+      document.body.appendChild(fileDownload);
+      
+      const blob = new Blob(['\ufeff' + header], {
+        type: 'application/msword;charset=utf-8'
+      });
+      const url = URL.createObjectURL(blob);
+      fileDownload.href = url;
+      fileDownload.download = `${title}.doc`;
+      fileDownload.click();
+      document.body.removeChild(fileDownload);
+    }
+
+    (window as any).showAppAlert?.('Export Successful', `Document successfully exported as ${type.toUpperCase()}!`, 'success');
   };
+
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
       {/* Sidebar Catatan */}
-      {(!isAdding || !selectedNote) && (
-      <div className={`${(selectedNote || isAdding) ? 'hidden lg:block' : 'block'} lg:col-span-1 space-y-4 pb-20 md:pb-0`}>
+      {!isAdding && (
+      <div className="block lg:col-span-1 space-y-4 pb-10 md:pb-0">
         <div className="relative">
           <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
           <input 
@@ -1135,9 +1318,9 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
               key={n.id}
               onClick={() => {
                 setSelectedNote(n);
-                setEditingId(n.id);
+                setIsAdding(false);
+                setEditingId(null);
                 setNewNote({ title: n.title, tag: n.tag });
-                setIsAdding(true);
               }}
               className={`p-5 rounded-[24px] border transition-all duration-300 transform cursor-pointer group ${
                 selectedNote?.id === n.id 
@@ -1184,7 +1367,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
         {isAdding ? (
           <div className="flex flex-col h-[calc(100vh-140px)] min-h-[580px] bg-white dark:bg-[#1a252f] rounded-[32px] border border-gray-200 dark:border-blue-900/20 shadow-2xl overflow-hidden transition-all animate-in zoom-in-95 duration-300">
             {/* Header Editor - Minimalist Google Docs Style */}
-              <div className="px-6 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a252f] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              <div className="relative z-[200] px-6 py-3 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-[#1a252f] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                   <button 
                     onClick={handleExitEditor}
@@ -1225,18 +1408,18 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                 </div>
                 
                 <div className="flex items-center gap-4">
-                  {/* Presence indicator: Avatars of active users */}
-                  <div className="flex items-center -space-x-2 mr-2">
+                  {/* Presence indicator: Avatars of active users with text badges */}
+                  <div className="flex items-center gap-2 mr-1 flex-wrap">
                     {activeUsers.map((u, i) => (
                       <motion.div 
                         initial={{ scale: 0, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         key={`presence-header-${u.uid || u.clientId}-${i}`} 
-                        className="relative group/avatar"
+                        className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1 rounded-full border border-slate-200/40 dark:border-slate-700/40 shadow-sm"
+                        title={`${u.name} ${u.isTyping ? '(Typing...)' : ''}`}
                       >
                         <div 
-                          title={`${u.name} ${u.isTyping ? '(Typing...)' : ''}`}
-                          className="w-9 h-9 rounded-full border-2 border-white dark:border-[#1a252f] flex items-center justify-center text-[10px] font-black text-white relative transition-transform hover:scale-110 hover:z-10 shadow-sm cursor-help"
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-white relative shadow-inner shrink-0"
                           style={{ backgroundColor: u.color }}
                         >
                           {u.photo ? (
@@ -1245,15 +1428,12 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                              u.name?.[0]?.toUpperCase()
                           )}
                           {u.isTyping && (
-                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-blue-500 border-2 border-white dark:border-gray-900 rounded-full flex items-center justify-center">
-                               <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
-                            </div>
+                            <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping" />
                           )}
                         </div>
-                        {/* Hover Tooltip/Label */}
-                        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-[9px] font-bold rounded opacity-0 group-hover/avatar:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 uppercase tracking-widest shadow-xl">
-                          {u.name} {u.isTyping ? '• Typing...' : ''}
-                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-gray-300 max-w-[120px] truncate leading-none">
+                          {u.name}
+                        </span>
                       </motion.div>
                     ))}
                   </div>
@@ -1287,6 +1467,53 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                   >
                     <History size={18} />
                   </button>
+
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowExportMenuEditor(!showExportMenuEditor)}
+                      className="p-2 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-all flex items-center justify-center"
+                      title="Export Options"
+                    >
+                      <Download size={18} />
+                    </button>
+                    <AnimatePresence>
+                      {showExportMenuEditor && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setShowExportMenuEditor(false)} 
+                          />
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1"
+                          >
+                            <button
+                              onClick={() => {
+                                handleExport('pdf', editor && !editor.isDestroyed ? editor.getHTML() : '', newNote.title);
+                                setShowExportMenuEditor(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-gray-200 rounded-xl transition-all flex items-center gap-2"
+                            >
+                              <div className="w-2 h-2 rounded-full bg-red-500" />
+                              Export as PDF (.pdf)
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleExport('docx', editor && !editor.isDestroyed ? editor.getHTML() : '', newNote.title);
+                                setShowExportMenuEditor(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-gray-200 rounded-xl transition-all flex items-center gap-2"
+                            >
+                              <div className="w-2 h-2 rounded-full bg-blue-500" />
+                              Export as Word (.docx)
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </div>
 
@@ -1497,9 +1724,9 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
                 <div key={`editor-content-${editingId}`} className="editor-content-container relative flex-1 pb-32">
                   {/* Document Page Simulation - Modern Minimalist */}
-                  <div className="page-simulation-container max-w-[850px] mx-auto my-6 md:my-12 bg-white dark:bg-[#0f172a] shadow-[0_2px_15px_rgba(0,0,0,0.05)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] rounded-xl min-h-[1056px] relative p-10 md:p-20 border border-gray-200/40 dark:border-blue-900/10 transition-all duration-500 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] dark:hover:border-blue-700/20">
+                  <div className="page-simulation-container max-w-[850px] mx-auto my-6 md:my-12 bg-[#FCFAF7] dark:bg-[#11131a] shadow-[0_4px_30px_rgba(0,0,0,0.02)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] rounded-3xl min-h-[1056px] relative p-8 md:p-16 border border-amber-900/5 dark:border-white/5 transition-all duration-500 hover:shadow-[0_12px_45px_rgba(0,0,0,0.04)]">
                     {editor && (editor as any).extensionManager && (editor as any).extensionManager.extensions && editor.commands ? (
-                      <div className="prose prose-slate lg:prose-lg dark:prose-invert max-w-none prose-headings:font-serif prose-headings:tracking-tight prose-p:text-slate-600 dark:prose-p:text-slate-400 prose-p:leading-relaxed selection:bg-blue-100 dark:selection:bg-blue-900/40">
+                      <div className="max-w-none w-full select-text">
                         {editor && (
                           <BubbleMenu 
                             editor={editor} 
@@ -1779,6 +2006,16 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
             
             <div className="p-8 pb-4 border-b border-gray-100 dark:border-gray-800/50 flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => {
+                    setSelectedNote(null);
+                    setIsAdding(false);
+                  }}
+                  className="lg:hidden p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0 animate-pulse"
+                  title="Kembali ke Daftar"
+                >
+                  <ArrowLeft size={18} strokeWidth={2.5} />
+                </button>
                 <span className="px-4 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-500 text-[9px] font-black uppercase tracking-[3px] rounded-full border border-blue-100 dark:border-blue-800/50 shadow-sm">{selectedNote.tag}</span>
                 <span className="flex items-center gap-2 text-[10px] font-bold text-gray-300"><Clock size={12}/> {selectedNote.date}</span>
                 {selectedNote.isLocked && (
@@ -1798,20 +2035,59 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
                     {selectedNote.isLocked ? <Lock size={18}/> : <Unlock size={18}/>}
                   </button>
                 )}
-                <button 
-                  onClick={exportPDF}
-                  className="p-2.5 text-gray-300 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/10 rounded-xl transition-all"
-                  title="Export PDF"
-                >
-                  <Download size={18}/>
-                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowExportMenuReader(!showExportMenuReader)}
+                    className="p-2.5 text-gray-300 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/10 rounded-xl transition-all flex items-center justify-center"
+                    title="Export Options"
+                  >
+                    <Download size={18}/>
+                  </button>
+                  <AnimatePresence>
+                    {showExportMenuReader && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowExportMenuReader(false)} 
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                          className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1"
+                        >
+                          <button
+                            onClick={() => {
+                              handleExport('pdf');
+                              setShowExportMenuReader(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-gray-200 rounded-xl transition-all flex items-center gap-2"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                            Export as PDF (.pdf)
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleExport('docx');
+                              setShowExportMenuReader(false);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-gray-200 rounded-xl transition-all flex items-center gap-2"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                            Export as Word (.docx)
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
                 <button 
                   onClick={() => handleAction('edit', selectedNote.id)} 
-                  className={`p-2.5 rounded-xl transition-all ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed text-gray-300' : 'text-gray-300 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10'}`}
+                  className={`px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-blue-500/10 flex items-center gap-2 ${selectedNote.isLocked && !isAdmin ? 'opacity-20 cursor-not-allowed' : 'active:scale-95'}`}
                   title={selectedNote.isLocked && !isAdmin ? "Note Locked" : "Edit Note"}
                   disabled={selectedNote.isLocked && !isAdmin}
                 >
-                  <Pencil size={18}/>
+                  <Pencil size={12} strokeWidth={3} /> Buka Editor
                 </button>
                 <button 
                   onClick={() => handleAction('delete', selectedNote.id)} 
@@ -1826,7 +2102,7 @@ export default function Notulensi({ isAdmin, user }: { isAdmin: boolean, user: U
 
             <div className="p-10 pt-8 flex-1 overflow-y-auto max-h-[800px] custom-scrollbar" ref={noteRef}>
               <h2 className="font-serif text-4xl font-black mb-8 leading-[1.1] tracking-tight decoration-blue-500/30 underline-offset-8 transition-all group-hover:underline">{selectedNote.title}</h2>
-              <div className="prose prose-base dark:prose-invert max-w-none prose-headings:font-serif prose-p:leading-relaxed prose-li:my-1 prose-img:max-h-[400px] prose-img:mx-auto prose-img:rounded-2xl prose-img:shadow-xl prose-p:text-gray-600 dark:prose-p:text-gray-300">
+              <div className="prose prose-base dark:prose-invert max-w-none prose-headings:font-serif prose-headings:text-slate-900 dark:prose-headings:text-slate-50 prose-p:leading-relaxed prose-li:my-1 prose-img:max-h-[400px] prose-img:mx-auto prose-img:rounded-2xl prose-img:shadow-xl prose-p:text-slate-800 dark:prose-p:text-slate-200 antialiased">
                 {selectedNote.htmlContent ? (
                   <div dangerouslySetInnerHTML={{ __html: selectedNote.htmlContent }} />
                 ) : (

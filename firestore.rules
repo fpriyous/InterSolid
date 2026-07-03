@@ -119,6 +119,34 @@ service cloud.firestore {
       allow write: if isMember();
     }
 
+    // Video Profile Directory
+    match /video_profiles/{profileId} {
+      allow read: if true;
+      allow create: if isMember() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isMember() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // InterLingo Progress
+    match /interlingo_progress/{progressId} {
+      allow read: if true;
+      allow write: if isMember() && progressId == request.auth.uid;
+    }
+
+    // Auto Paham Chat Threads (Isolated per user)
+    match /study_chats/{chatId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid) && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+    }
+
+    // Auto Paham Custom Knowledge Base (Readable by all, writable by class members)
+    match /study_knowledge/{knowledgeId} {
+      allow read: if isSignedIn();
+      allow create: if isMember() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isMember() && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
     // System Check
     match /test/connection {
       allow read, write: if true;

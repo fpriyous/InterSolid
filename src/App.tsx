@@ -19,7 +19,10 @@ import {
   LogOut,
   User as UserIcon,
   Image as ImageIcon,
-  Loader2
+  Loader2,
+  Sparkles,
+  Video,
+  Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from './lib/firebase';
@@ -39,6 +42,7 @@ import { db } from './lib/firebase';
 import SplashCursor from './components/SplashCursor';
 import FadeContent from './components/FadeContent';
 import FocusText from './components/FocusText';
+import GodMode from './components/GodMode';
 
 // Lazy Load Feature Components
 const Kalender = lazy(() => import('./components/Kalender'));
@@ -51,6 +55,9 @@ const Pengumuman = lazy(() => import('./components/Pengumuman'));
 const Memory = lazy(() => import('./components/Memory'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const RandomMemoryPopup = lazy(() => import('./components/RandomMemoryPopup'));
+const StudyCompanion = lazy(() => import('./components/StudyCompanion'));
+const VideoProfiles = lazy(() => import('./components/VideoProfiles'));
+const InterLingo = lazy(() => import('./components/InterLingo'));
 
 type MenuId = string;
 
@@ -66,6 +73,9 @@ const MENU_ITEMS: MenuItem[] = [
   { id: 'kalender', label: 'Calendar', icon: Calendar, description: 'Manage and coordinate class schedules.' },
   { id: 'notulensi', label: 'Notes', icon: FileText, description: 'Record minutes of meetings and class notes.' },
   { id: 'aspirasi', label: 'Yapping', icon: MessageSquare, description: 'Submit anonymous suggestions and questions.' },
+  { id: 'study', label: 'Auto Paham', icon: Sparkles, description: 'Consult with our dedicated AI Hubungan Internasional tutor.' },
+  { id: 'profiles', label: 'Video Profile', icon: Video, description: 'Browse and upload 10-second student perkenalan video profiles.' },
+  { id: 'interlingo', label: 'InterLingo', icon: Trophy, description: 'Gamified mini-class to master simple Mandarin vocabulary.' },
   { id: 'pengumuman', label: 'Announcements', icon: Bell, description: 'Broadcast updates and alerts to everyone.' },
   { id: 'memory', label: 'Memo', icon: ImageIcon, description: 'Preserve and share visual highlights of our journey.' },
   { id: 'absen', label: 'Data', icon: CheckCircle, description: 'Track digital checklists, attendance, and dues.' },
@@ -110,6 +120,10 @@ export default function App() {
   const [notification, setNotification] = useState<{ id: string, message: string, type?: string } | null>(null);
   const [authError, setAuthError] = useState<'unauthenticated' | 'unauthorized' | null>(null);
   const [appAlert, setAppAlert] = useState<{ title: string; message: string; type?: 'info' | 'error' | 'success' } | null>(null);
+
+  // God Mode Secret Trigger States
+  const [logoClicks, setLogoClicks] = useState(0);
+  const [showGodMode, setShowGodMode] = useState(false);
 
   useEffect(() => {
     (window as any).showAuthError = (type: 'unauthenticated' | 'unauthorized') => {
@@ -270,6 +284,9 @@ export default function App() {
             case 'aspirasi': return <Aspirasi isAdmin={effectiveAdmin} isDewa={isDewa} user={user} />;
             case 'memory': return <Memory isAdmin={effectiveAdmin} user={user} targetId={targetId} setTargetId={setTargetId} />;
             case 'pengumuman': return <Pengumuman isAdmin={effectiveAdmin} user={user} />;
+            case 'study': return <StudyCompanion user={user} isAdmin={effectiveAdmin} />;
+            case 'profiles': return <VideoProfiles user={user} isAdmin={effectiveAdmin} />;
+            case 'interlingo': return <InterLingo user={user} isAdmin={effectiveAdmin} />;
             default: return <Dashboard user={user} setActivePage={navigateToPage} />;
           }
         })()}
@@ -286,8 +303,19 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-[60] h-[56px] md:h-[62px] bg-white/90 dark:bg-[#141e26]/95 backdrop-blur-md border-b border-blue-100 dark:border-blue-900/30 px-4 md:px-6 flex items-center justify-between">
         <div 
-          className="flex items-center gap-2 md:gap-3 cursor-pointer group"
-          onClick={() => navigateToPage('home')}
+          className="flex items-center gap-2 md:gap-3 cursor-pointer group select-none"
+          onClick={() => {
+            navigateToPage('home');
+            setLogoClicks(prev => {
+              const next = prev + 1;
+              if (next >= 5) {
+                setShowGodMode(true);
+                (window as any).showAppAlert?.('🌐 JALUR DALAM DIAKTIFKAN 🌐', 'Anda berhasil mengakses panel kontrol God Mode rahasia mahasiswa berprestasi!', 'success');
+                return 0;
+              }
+              return next;
+            });
+          }}
         >
           <div className="w-8 h-8 md:w-9 md:h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
             <LayoutDashboard size={16} className="text-white md:hidden" />
@@ -816,6 +844,8 @@ export default function App() {
         )}
       </AnimatePresence>
       
+      <GodMode isOpen={showGodMode} onClose={() => setShowGodMode(false)} />
+
       {/* Global Background Features */}
       <Suspense fallback={null}>
         <RandomMemoryPopup />

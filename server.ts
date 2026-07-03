@@ -9,6 +9,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
@@ -172,6 +173,105 @@ async function startServer() {
       console.error('[Upload Endpoint Error]:', error);
       return res.status(500).json({ 
         error: (error as Error).message || 'Terjadi kesalahan saat mengunggah ke Cloudinary.',
+        status: 'error'
+      });
+    }
+  });
+
+  // Setup Lazy-initialized Gemini Client
+  let aiClient: any = null;
+  function getGeminiClient() {
+    if (!aiClient) {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn("⚠️ GEMINI_API_KEY is not configured in environment variables.");
+      }
+      aiClient = new GoogleGenAI({
+        apiKey: apiKey || "MOCK_KEY",
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+    }
+    return aiClient;
+  }
+
+  // Auto Paham Chat API
+  app.post('/api/study-companion/chat', async (req: any, res: any) => {
+    try {
+      const { messages, knowledgeContext } = req.body;
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'Messages array is required', status: 'error' });
+      }
+
+      const ai = getGeminiClient();
+      
+      const contents = messages.map((m: any) => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.text }]
+      }));
+
+      let systemInstruction = "Anda adalah 'Auto Paham' - Tutor AI Hubungan Internasional (HI) khusus untuk kelas 'InterSolid'. Tugas Anda adalah membantu mahasiswa InterSolid memahami konsep, teori, dan isu Hubungan Internasional dengan cara yang sangat menyenangkan, interaktif, mudah dipahami, tetapi tetap berbobot akademis. Selalu gunakan analogi kasual atau humor cerdas seputar HI (misalnya membandingkan perebutan kursi kelas dengan realisme defensif vs ofensif, atau kolaborasi kelompok dengan liberalisme institusional). Nada bicara Anda bersahabat, asyik, suportif, berwawasan luas, serta menggunakan panggilan akrab seperti 'solidaritas' atau 'kawan'. Dukung format markdown untuk respon yang terstruktur rapi.";
+
+      if (knowledgeContext && Array.isArray(knowledgeContext) && knowledgeContext.length > 0) {
+        systemInstruction += "\n\nBerikut adalah referensi materi khusus dari 'Database Ilmu' kelas InterSolid. Jika pertanyaan pengguna berkaitan dengan materi di bawah ini, Anda WAJIB mengutamakan penjelasan, definisi, dan fakta dari database ini agar penjelasan Anda selaras dengan materi kuliah mereka:\n" + 
+          knowledgeContext.map((k: any, idx: number) => `${idx + 1}. [Topik: ${k.title} / Kategori: ${k.category}]: ${k.content}`).join("\n");
+      }
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents,
+        config: {
+          systemInstruction,
+          temperature: 0.7
+        }
+      });
+
+      const replyText = response.text || '';
+      return res.json({ text: replyText, status: 'success' });
+    } catch (error: any) {
+      console.error('[Study Companion Error]:', error);
+      return res.status(500).json({ 
+        error: error.message || 'Terjadi kesalahan saat memproses chat.',
+        status: 'error'
+      });
+    }
+  });
+
+  // Skripsi Bypass API
+  app.post('/api/skripsi-bypass/generate-title', async (req: any, res: any) => {
+    try {
+      const { keyword } = req.body;
+      const ai = getGeminiClient();
+
+      const prompt = `Generate a highly sophisticated, humorous, and hyper-academic title for an International Relations undergraduate thesis (Shinta 2 journal standard) in Indonesian. It should sound extremely complex, using big academic buzzwords (e.g., 'Dinamika', 'Konstelasi', 'Dekonstruksi', 'Hegemoni', 'Negosiasi', 'Paradoks', 'Sekuritisasi', 'Ambiguitas') but also contain a subtle humorous undertone or be slightly absurd (yet sound 100% real to a professor). 
+${keyword ? `Integrate this keyword/topic: "${keyword}".` : ""}
+Also generate:
+1. Abstract (Humorous, hyper-academic)
+2. Introduction highlights
+3. Key theories used (e.g., Neo-Neo Synthesis, Post-structuralist constructivism)
+4. Absurd research findings
+5. A humorous grade (A+ but with notes like "Mahasiswa ini terlalu vokal di kelas")
+
+Format the output strictly as a JSON object with these keys: "title", "abstract", "introduction", "theories", "findings", "grade", "notes". Do not wrap in markdown block.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.8
+        }
+      });
+
+      const data = JSON.parse(response.text || '{}');
+      return res.json({ data, status: 'success' });
+    } catch (error: any) {
+      console.error('[Skripsi Bypass Error]:', error);
+      return res.status(500).json({ 
+        error: error.message || 'Terjadi kesalahan saat membuat judul skripsi.',
         status: 'error'
       });
     }
