@@ -4,7 +4,7 @@ import {
   Award, BookOpen, CheckCircle, ShieldCheck, HelpCircle, ArrowRight, 
   RefreshCw, Star, Flame, Trophy, Lock, Play, ChevronRight, ChevronLeft,
   MessageSquare, Sparkles, Loader2, User, Volume2, Heart, Smile, Compass, 
-  Gift, Utensils
+  Gift, Utensils, Clock
 } from 'lucide-react';
 import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, setDoc, updateDoc, collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LESSONS, CAT_MENTORS, CAT_MENTORS as MENTORS, CatMentor, Lesson, Question } from '../data/interlingo_data';
 
 // --- SOUNDBOARD CONTROLLER (Using Web Audio API) ---
-const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click') => {
+const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click' | 'jump' | 'whack' | 'pop' | 'alarm') => {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const now = ctx.currentTime;
@@ -92,6 +92,53 @@ const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click'
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.09);
+    } else if (type === 'jump') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(800, now + 0.25);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+    } else if (type === 'whack') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, now);
+      osc.frequency.linearRampToValueAtTime(60, now + 0.15);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } else if (type === 'pop') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(900, now);
+      osc.frequency.setValueAtTime(1400, now + 0.05);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.13);
+    } else if (type === 'alarm') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(350, now);
+      gain.gain.setValueAtTime(0.04, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.09);
     }
   } catch (err) {
     console.warn("Web Audio API not allowed or supported yet:", err);
@@ -100,15 +147,50 @@ const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click'
 
 // --- AUDIBLE TTS MANDARIN PRONUNCIATION ---
 const speakMandarin = (text: string) => {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel(); // cancel any ongoing speech
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 0.85; // slightly slower for educational focus
-    utterance.pitch = 1.1; // friendly cute tone
-    window.speechSynthesis.speak(utterance);
-  } else {
-    console.warn("Speech Synthesis not supported in this browser.");
+  try {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      // Resume if speaking queue is stuck in paused state (common browser issue)
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      
+      // Cancel previous speech to prevent overlapping
+      window.speechSynthesis.cancel();
+      
+      // Use a slight timeout (50ms) before speaking. 
+      // Direct synchronous speak after cancel often causes a silent block or failure in Chrome/Safari.
+      setTimeout(() => {
+        try {
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'zh-CN';
+          utterance.rate = 0.82; // comfortable rate for learning
+          utterance.pitch = 1.1; // cute, animated tone
+          
+          // Get available voices and prefer a Chinese voice
+          const voices = window.speechSynthesis.getVoices();
+          const zhVoice = voices.find(v => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cn'));
+          if (zhVoice) {
+            utterance.voice = zhVoice;
+          }
+          
+          utterance.onerror = (e) => {
+            console.warn("SpeechSynthesis error:", e.error);
+            // Resume to unblock speechSynthesis queue if paused
+            if (window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            }
+          };
+          
+          window.speechSynthesis.speak(utterance);
+        } catch (innerErr) {
+          console.warn("Error inside speech synthesis delay:", innerErr);
+        }
+      }, 50);
+    } else {
+      console.warn("Speech Synthesis not supported in this browser.");
+    }
+  } catch (err) {
+    console.error("Failed to execute speakMandarin:", err);
   }
 };
 
@@ -246,6 +328,104 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
   const [feedingBubble, setFeedingBubble] = useState<string | null>(null);
   const [xpDeductionAnim, setXpDeductionAnim] = useState(false);
 
+  // RPG Gameplay & Arcade States
+  const [lives, setLives] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(25);
+  const [gameplayMode, setGameplayMode] = useState<'classic' | 'jumper' | 'whack' | 'catcher'>('classic');
+  const [jumperCatPos, setJumperCatPos] = useState<number | null>(null);
+  const [whackHammerPos, setWhackHammerPos] = useState<number | null>(null);
+  const [isTimeUp, setIsTimeUp] = useState(false);
+  const [bubbles, setBubbles] = useState<any[]>([]);
+
+  // Get dynamic mode per question
+  const getModeForIndex = (index: number): 'classic' | 'jumper' | 'whack' | 'catcher' => {
+    const modes: ('classic' | 'jumper' | 'whack' | 'catcher')[] = ['jumper', 'whack', 'catcher', 'classic'];
+    return modes[index % modes.length];
+  };
+
+  // Initialize bubble drift items
+  const initBubbles = (question: Question) => {
+    const list = question.options.map((opt, i) => {
+      return {
+        id: i,
+        idx: i,
+        text: opt,
+        x: 5 + Math.random() * 55, // safe % range to avoid overflowing box sides
+        y: 15 + Math.random() * 45,
+        vx: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.8),
+        vy: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.8)
+      };
+    });
+    setBubbles(list);
+  };
+
+  // Bubble floating loop
+  useEffect(() => {
+    if (gameplayMode !== 'catcher' || isAnswered || !activeLesson || lessonComplete || lives <= 0) {
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setBubbles((prev) => 
+        prev.map((b) => {
+          let newX = b.x + b.vx;
+          let newY = b.y + b.vy;
+          let newVx = b.vx;
+          let newVy = b.vy;
+          
+          if (newX < 2 || newX > 62) {
+            newVx = -b.vx;
+            newX = Math.max(2, Math.min(62, newX));
+          }
+          if (newY < 5 || newY > 65) {
+            newVy = -b.vy;
+            newY = Math.max(5, Math.min(65, newY));
+          }
+          
+          return {
+            ...b,
+            x: newX,
+            y: newY,
+            vx: newVx,
+            vy: newVy
+          };
+        })
+      );
+    }, 45);
+    
+    return () => clearInterval(interval);
+  }, [gameplayMode, isAnswered, activeLesson, lessonComplete, lives]);
+
+  // Countdown timer clock
+  useEffect(() => {
+    if (!activeLesson || lessonComplete || lives <= 0 || isAnswered) {
+      return;
+    }
+
+    const timerInterval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerInterval);
+          handleTimeUp();
+          return 0;
+        }
+        if (prev <= 6) {
+          playSound('alarm');
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timerInterval);
+  }, [activeLesson, currentQuestionIdx, isAnswered, lessonComplete, lives]);
+
+  const handleTimeUp = () => {
+    setIsTimeUp(true);
+    setIsAnswered(true);
+    playSound('incorrect');
+    setLives((prev) => Math.max(0, prev - 1));
+  };
+
   // Load progress & leaderboard from Firestore (Durable Cloud Persistence)
   useEffect(() => {
     if (!user) {
@@ -300,10 +480,21 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     setSelectedOption(null);
     setIsAnswered(false);
     setLessonComplete(false);
+    setLives(3);
+    setTimeLeft(25);
+    setIsTimeUp(false);
+    setJumperCatPos(null);
+    setWhackHammerPos(null);
+    
+    const initialMode = getModeForIndex(0);
+    setGameplayMode(initialMode);
+    if (initialMode === 'catcher') {
+      initBubbles(lesson.questions[0]);
+    }
     
     // Announce lesson start in speech
     setTimeout(() => {
-      speakMandarin(`nihao`);
+      speakMandarin("你好");
     }, 400);
   };
 
@@ -311,23 +502,86 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     if (isAnswered) return;
     playSound('click');
     setSelectedOption(idx);
-  };
-
-  const handleVerifyAnswer = () => {
-    if (selectedOption === null || isAnswered) return;
     setIsAnswered(true);
     
-    const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === selectedOption;
+    const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
     if (isCorrect) {
       playSound('correct');
-      // Audibly pronounce correct answer in Mandarin if available
       const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
       if (pronunciationText) {
         speakMandarin(pronunciationText);
       }
     } else {
       playSound('incorrect');
+      setLives((prev) => Math.max(0, prev - 1));
     }
+  };
+
+  const handleJumperLeap = (idx: number) => {
+    if (isAnswered) return;
+    playSound('jump');
+    setJumperCatPos(idx);
+    
+    setTimeout(() => {
+      setSelectedOption(idx);
+      setIsAnswered(true);
+      const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
+      if (isCorrect) {
+        playSound('correct');
+        const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
+        if (pronunciationText) {
+          speakMandarin(pronunciationText);
+        }
+      } else {
+        playSound('incorrect');
+        setLives((prev) => Math.max(0, prev - 1));
+      }
+    }, 750);
+  };
+
+  const handleWhackMole = (idx: number) => {
+    if (isAnswered) return;
+    playSound('whack');
+    setWhackHammerPos(idx);
+    
+    setTimeout(() => {
+      setSelectedOption(idx);
+      setIsAnswered(true);
+      const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
+      if (isCorrect) {
+        playSound('correct');
+        const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
+        if (pronunciationText) {
+          speakMandarin(pronunciationText);
+        }
+      } else {
+        playSound('incorrect');
+        setLives((prev) => Math.max(0, prev - 1));
+      }
+    }, 350);
+  };
+
+  const handlePopBubble = (idx: number) => {
+    if (isAnswered) return;
+    playSound('pop');
+    setSelectedOption(idx);
+    setIsAnswered(true);
+    
+    const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
+    if (isCorrect) {
+      playSound('correct');
+      const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
+      if (pronunciationText) {
+        speakMandarin(pronunciationText);
+      }
+    } else {
+      playSound('incorrect');
+      setLives((prev) => Math.max(0, prev - 1));
+    }
+  };
+
+  const handleVerifyAnswer = () => {
+    // Verified automatically
   };
 
   const handleNextQuestion = () => {
@@ -335,9 +589,20 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     if (!activeLesson) return;
     
     if (currentQuestionIdx < activeLesson.questions.length - 1) {
-      setCurrentQuestionIdx(prev => prev + 1);
+      const nextIdx = currentQuestionIdx + 1;
+      setCurrentQuestionIdx(nextIdx);
       setSelectedOption(null);
       setIsAnswered(false);
+      setIsTimeUp(false);
+      setTimeLeft(25);
+      setJumperCatPos(null);
+      setWhackHammerPos(null);
+      
+      const nextMode = getModeForIndex(nextIdx);
+      setGameplayMode(nextMode);
+      if (nextMode === 'catcher') {
+        initBubbles(activeLesson.questions[nextIdx]);
+      }
     } else {
       handleCompleteLesson();
     }
@@ -401,7 +666,7 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     setFeedingBubble(`"${mentor.name} mengunyah ikan basah dengan gembira... Hěn hǎochī (很好吃)!"`);
     
     // Pronounce thank you in Mandarin
-    speakMandarin("xiexie ni");
+    speakMandarin("谢谢你");
 
     const docRef = doc(db, 'interlingo_progress', user.uid);
     try {
@@ -449,7 +714,61 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
         }`} />
 
         <AnimatePresence mode="wait">
-          {!lessonComplete ? (
+          {lives <= 0 ? (
+            /* GAME OVER SCREEN */
+            <motion.div
+              key="gameover"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center py-10 space-y-6"
+            >
+              <div className="w-24 h-24 bg-gradient-to-tr from-rose-500 to-red-600 text-white rounded-[2.2rem] flex items-center justify-center mx-auto shadow-xl shadow-rose-500/20 animate-bounce">
+                <span className="text-5xl">😾</span>
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="font-serif text-3xl font-black text-rose-600 dark:text-rose-400">Interupsi, Sidang Gagal!</h3>
+                <p className="text-xs text-rose-500 uppercase tracking-[0.25em] font-black">Diplomasi Mogok • Kucing Kecewa</p>
+                <p className="text-sm max-w-md mx-auto leading-relaxed text-slate-500 dark:text-slate-350 px-4 italic">
+                  “Meow! Diplomasi kamu kacau balau, aliansi bubar, dan kucing perdamaian mogok makan! Coba ulangi materi dengan lebih fokus agar bisa menyuap para oposisi!”
+                </p>
+              </div>
+
+              {/* Sir Grumpy Profile */}
+              <div className="flex justify-center my-4">
+                <div className="bg-rose-50 dark:bg-rose-950/20 p-5 rounded-[2rem] border border-rose-500/10 max-w-sm flex items-center gap-4">
+                  <img src="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=300&auto=format&fit=crop" className="w-16 h-16 rounded-2xl object-cover border-2 border-rose-500" />
+                  <div className="text-left">
+                    <span className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-full uppercase">Ketua Oposisi</span>
+                    <h4 className="font-serif font-bold text-sm text-slate-800 dark:text-white mt-1">Sir Grumpy</h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">"Kucing FISIP butuh negosiasi nyata, bukan omong kosong!"</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    playSound('click');
+                    handleStartLesson(activeLesson);
+                  }}
+                  className="px-8 py-4 bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-rose-500/10 transition-all cursor-pointer"
+                >
+                  Ulangi Materi 🔁
+                </button>
+                <button
+                  onClick={() => {
+                    playSound('click');
+                    setActiveLesson(null);
+                  }}
+                  className="px-8 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
+                >
+                  Kembali ke Peta
+                </button>
+              </div>
+            </motion.div>
+          ) : !lessonComplete ? (
             <motion.div
               key={currentQuestionIdx}
               initial={{ opacity: 0, x: 25 }}
@@ -479,10 +798,57 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                         setActiveLesson(null);
                       }
                     }}
-                    className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors"
+                    className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
                   >
                     Keluar
                   </button>
+                </div>
+
+                {/* Hearts and Timer Row */}
+                <div className="flex items-center justify-between bg-orange-50/50 dark:bg-slate-900/30 px-4 py-2.5 rounded-2xl border border-orange-100/50 dark:border-slate-800">
+                  {/* Hearts */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Nyawa:</span>
+                    {[0, 1, 2].map((heartIdx) => (
+                      <motion.div
+                        key={heartIdx}
+                        animate={heartIdx < lives ? { scale: [1, 1.2, 1] } : { scale: 1 }}
+                        transition={{ repeat: heartIdx < lives ? Infinity : 0, repeatDelay: 5 + heartIdx }}
+                      >
+                        <Heart 
+                          className={`w-5 h-5 ${
+                            heartIdx < lives 
+                              ? 'text-rose-500 fill-rose-500 drop-shadow-[0_2px_4px_rgba(244,63,94,0.2)]' 
+                              : 'text-slate-300 dark:text-slate-700'
+                          }`} 
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* Mode Badge */}
+                  <div className="hidden sm:flex items-center gap-1 text-[9px] font-black uppercase bg-amber-500/10 dark:bg-amber-500/5 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full border border-amber-500/10">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    {gameplayMode === 'classic' && 'Cerdas Cermat Tepat ⏱️'}
+                    {gameplayMode === 'jumper' && 'Lompat Kucing Lucu 😸'}
+                    {gameplayMode === 'whack' && 'Gebuk Tikus Koruptor 🔨'}
+                    {gameplayMode === 'catcher' && 'Tangkap Geopolitik 🎈'}
+                  </div>
+
+                  {/* Timer */}
+                  <div className="flex items-center gap-1.5">
+                    <Clock className={`w-4 h-4 ${timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-slate-400'}`} />
+                    <span className={`font-mono text-sm font-black ${
+                      timeLeft <= 5 
+                        ? 'text-red-500 animate-bounce bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20' 
+                        : 'text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {timeLeft}s
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -504,6 +870,8 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                       ? (selectedOption === question.correctAnswer 
                           ? `“Luar biasa! Benar sekali meow! Dengar dan ulangi pelafalan Mandarin-nya ya.”` 
                           : `“Aduh, sayang sekali meow. Jawabannya kurang tepat, tapi coba telusuri penjelasanku!”`)
+                      : isTimeUp
+                      ? `“WAKTU HABIS MEOW! Kamu harus bertindak lebih cepat di panggung internasional!”`
                       : `“${mentor.catchphrase} Perhatikan baik-baik soal di bawah!”`
                     }
                   </p>
@@ -529,7 +897,7 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                   {question.audioText && (
                     <button
                       onClick={() => speakMandarin(question.audioText!)}
-                      className="px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 mx-auto"
+                      className="px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 mx-auto cursor-pointer"
                       title="Klik untuk mendengarkan lafal Mandarin asli"
                     >
                       <Volume2 className="w-4 h-4" /> Dengar Pelafalan
@@ -537,41 +905,240 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                   )}
                 </div>
 
-                {/* Multiple Choice Options */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {question.options.map((opt, idx) => {
-                    const isSelected = selectedOption === idx;
-                    const isCorrect = question.correctAnswer === idx;
-                    let cardStyle = "border-slate-200 dark:border-slate-800 hover:border-orange-400 bg-white dark:bg-[#18242f]";
-                    
-                    if (isAnswered) {
-                      if (isCorrect) cardStyle = "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold ring-2 ring-emerald-500/10";
-                      else if (isSelected) cardStyle = "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400";
-                      else cardStyle = "border-slate-100 dark:border-slate-900 opacity-40";
-                    } else if (isSelected) {
-                      cardStyle = "border-orange-500 bg-orange-500/5 ring-4 ring-orange-500/10";
-                    }
+                {/* DYNAMIC ARCADE GAME arenas */}
+                {gameplayMode === 'classic' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {question.options.map((opt, idx) => {
+                      const isSelected = selectedOption === idx;
+                      const isCorrect = question.correctAnswer === idx;
+                      let cardStyle = "border-slate-200 dark:border-slate-800 hover:border-orange-400 bg-white dark:bg-[#18242f]";
+                      
+                      if (isAnswered) {
+                        if (isCorrect) cardStyle = "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold ring-2 ring-emerald-500/10";
+                        else if (isSelected) cardStyle = "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400";
+                        else cardStyle = "border-slate-100 dark:border-slate-900 opacity-40";
+                      } else if (isSelected) {
+                        cardStyle = "border-orange-500 bg-orange-500/5 ring-4 ring-orange-500/10";
+                      }
 
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleOptionClick(idx)}
-                        disabled={isAnswered}
-                        className={`text-left p-4.5 rounded-2xl border text-xs md:text-sm font-semibold transition-all flex items-center justify-between ${cardStyle} active:scale-98`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                            isSelected ? 'bg-orange-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                          }`}>
-                            {String.fromCharCode(65 + idx)}
-                          </span>
-                          <span className="text-slate-800 dark:text-slate-100">{opt}</span>
-                        </div>
-                        {isAnswered && isCorrect && <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleOptionClick(idx)}
+                          disabled={isAnswered}
+                          className={`text-left p-4.5 rounded-2xl border text-xs md:text-sm font-semibold transition-all flex items-center justify-between ${cardStyle} active:scale-98 cursor-pointer`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
+                              isSelected ? 'bg-orange-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                            }`}>
+                              {String.fromCharCode(65 + idx)}
+                            </span>
+                            <span className="text-slate-800 dark:text-slate-100">{opt}</span>
+                          </div>
+                          {isAnswered && isCorrect && <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {gameplayMode === 'jumper' && (
+                  <div className="space-y-4">
+                    <div className="relative bg-gradient-to-b from-sky-400/10 to-emerald-500/10 dark:from-sky-950/20 dark:to-emerald-950/20 h-56 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between p-4">
+                      {/* Floating Platforms Grid */}
+                      <div className="grid grid-cols-2 gap-4 z-10">
+                        {question.options.map((opt, idx) => {
+                          const isSelected = selectedOption === idx;
+                          const isCorrect = question.correctAnswer === idx;
+                          let platformStyle = "bg-amber-100 border-amber-300 text-amber-900 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-200";
+                          
+                          if (isAnswered) {
+                            if (isCorrect) platformStyle = "bg-emerald-500 text-white border-emerald-600";
+                            else if (isSelected) platformStyle = "bg-rose-500 text-white border-rose-600 animate-pulse";
+                            else platformStyle = "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 opacity-40";
+                          } else if (jumperCatPos === idx) {
+                            platformStyle = "bg-orange-400 text-white border-orange-500";
+                          }
+                          
+                          return (
+                            <button
+                              key={idx}
+                              disabled={isAnswered}
+                              onClick={() => handleJumperLeap(idx)}
+                              className={`p-3 rounded-2xl border-b-4 font-bold text-xs shadow-md transition-all text-center flex flex-col items-center justify-center relative hover:scale-102 active:scale-95 cursor-pointer ${platformStyle}`}
+                            >
+                              <span className="absolute top-1 left-2 text-[8px] bg-black/10 px-1.5 py-0.5 rounded uppercase font-black">PLATFORM {String.fromCharCode(65 + idx)}</span>
+                              <span className="mt-2 text-[11px] leading-snug line-clamp-2">{opt}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Ground & Jumper Sprite */}
+                      <div className="relative h-16 w-full border-t border-slate-300/30 flex justify-center items-end bg-black/5 rounded-b-2xl">
+                        <motion.div
+                          className="absolute bottom-2 left-[50%] -translate-x-1/2"
+                          animate={
+                            jumperCatPos === null
+                              ? { y: [0, -3, 0] }
+                              : jumperCatPos === 0
+                              ? { x: -110, y: -110, rotate: [0, 180, 360], scale: 1.1 }
+                              : jumperCatPos === 1
+                              ? { x: 110, y: -110, rotate: [0, -180, -360], scale: 1.1 }
+                              : jumperCatPos === 2
+                              ? { x: -110, y: -50, rotate: [0, 180, 360], scale: 1.1 }
+                              : { x: 110, y: -50, rotate: [0, -180, -360], scale: 1.1 }
+                          }
+                          transition={{ 
+                            y: jumperCatPos === null ? { repeat: Infinity, duration: 1.5 } : { type: 'spring', stiffness: 100, damping: 10 },
+                            x: { type: 'spring', stiffness: 100, damping: 10 },
+                            rotate: { duration: 0.6 }
+                          }}
+                        >
+                          <div className="flex flex-col items-center relative">
+                            {jumperCatPos === null && (
+                              <span className="absolute -top-7 text-[8px] font-black bg-orange-500 text-white px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-bounce">LOMPAT! 😸</span>
+                            )}
+                            
+                            <div className="w-11 h-11 bg-orange-400 rounded-full border-2 border-white flex items-center justify-center shadow-md text-xl relative">
+                              {isAnswered && selectedOption === question.correctAnswer ? '😸👑' : isAnswered ? '😵' : '😸'}
+                              {/* ears */}
+                              <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-orange-400 rounded-tl-full border-t-2 border-l-2 border-white -rotate-[15deg]" />
+                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-400 rounded-tr-full border-t-2 border-r-2 border-white rotate-[15deg]" />
+                            </div>
+                            <div className="flex gap-3 -mt-1">
+                              <div className="w-3 h-2.5 bg-white rounded-full border border-orange-300" />
+                              <div className="w-3 h-2.5 bg-white rounded-full border border-orange-300" />
+                            </div>
+                          </div>
+                        </motion.div>
+                        
+                        <span className="text-[9px] font-bold text-slate-400/60 tracking-wider">TAP SEBUAH PLATFORM UNTUK MELOMPAT</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {gameplayMode === 'whack' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 bg-gradient-to-b from-emerald-800/20 to-emerald-950/20 p-4 rounded-3xl border border-emerald-900/30 relative overflow-hidden h-72">
+                      {/* Mallet mallet thud effect */}
+                      <AnimatePresence>
+                        {whackHammerPos !== null && (
+                          <motion.div
+                            initial={{ opacity: 0, rotate: 60, scale: 0.8 }}
+                            animate={{ 
+                              opacity: 1, 
+                              rotate: -20, 
+                              scale: 1.2,
+                              x: whackHammerPos === 0 || whackHammerPos === 2 ? -30 : 130,
+                              y: whackHammerPos === 0 || whackHammerPos === 1 ? -40 : 80
+                            }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            className="absolute z-30 pointer-events-none left-1/3 top-1/4 text-4xl"
+                          >
+                            🔨💥
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {question.options.map((opt, idx) => {
+                        const isSelected = selectedOption === idx;
+                        const isCorrect = question.correctAnswer === idx;
+                        let moleStyle = "bg-amber-950/60 hover:bg-amber-900/80 border-amber-900 text-amber-200";
+                        
+                        if (isAnswered) {
+                          if (isCorrect) moleStyle = "bg-emerald-500/20 border-emerald-500 text-emerald-300";
+                          else if (isSelected) moleStyle = "bg-rose-500/20 border-rose-500 text-rose-300";
+                          else moleStyle = "bg-slate-900/40 border-slate-800 opacity-20";
+                        }
+
+                        return (
+                          <button
+                            key={idx}
+                            disabled={isAnswered}
+                            onClick={() => handleWhackMole(idx)}
+                            className={`relative border-2 rounded-2xl p-3 flex flex-col justify-between items-center transition-all duration-300 active:scale-95 group overflow-hidden h-28 cursor-pointer ${moleStyle}`}
+                          >
+                            <div className="absolute bottom-0 inset-x-0 h-6 bg-slate-950/50 rounded-full border-t border-slate-900 flex items-center justify-center">
+                              <span className="text-[8px] text-slate-500 uppercase tracking-widest font-black">LOBANG {String.fromCharCode(65 + idx)}</span>
+                            </div>
+
+                            <motion.div
+                              animate={
+                                isAnswered && isSelected && !isCorrect
+                                  ? { y: 20, rotate: 45 }
+                                  : isAnswered && isCorrect
+                                  ? { y: [0, -10, 0], scale: 1.1 }
+                                  : { y: [0, -5, 0] }
+                              }
+                              transition={{ repeat: isAnswered ? 0 : Infinity, duration: 2, repeatType: "reverse" }}
+                              className="flex flex-col items-center z-10 -mt-1"
+                            >
+                              <div className="relative">
+                                <div className="w-10 h-10 bg-amber-750 dark:bg-amber-800 rounded-full border border-amber-500 shadow flex items-center justify-center text-xl relative">
+                                  {isAnswered && isCorrect ? '🐭💰' : isAnswered && isSelected ? '😵💨' : '🐭🕶️'}
+                                  <div className="absolute -top-1 -left-1 w-3.5 h-3.5 bg-amber-800 rounded-full border border-amber-600" />
+                                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-800 rounded-full border border-amber-600" />
+                                </div>
+                              </div>
+                            </motion.div>
+
+                            <span className="text-[10px] font-bold text-center leading-tight text-white px-1 py-0.5 rounded bg-black/40 border border-white/5 w-full truncate z-20">
+                              {opt}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {gameplayMode === 'catcher' && (
+                  <div className="space-y-4">
+                    <div className="relative bg-gradient-to-b from-indigo-900/40 to-slate-900/60 dark:from-[#0b0f19] dark:to-[#141a29] h-72 rounded-3xl border border-indigo-500/20 overflow-hidden p-3 flex flex-col justify-between">
+                      <div className="absolute top-2 inset-x-0 text-center pointer-events-none z-10">
+                        <span className="text-[9px] font-black uppercase bg-indigo-500 text-white px-2.5 py-0.5 rounded-full tracking-widest shadow-md">
+                          Pecahkan Gelembung Diplomasi yang Benar! 🎈
+                        </span>
+                      </div>
+
+                      <div className="relative flex-1 w-full">
+                        {bubbles.map((b) => {
+                          const isSelected = selectedOption === b.idx;
+                          const isCorrect = question.correctAnswer === b.idx;
+                          
+                          let bubbleStyle = "bg-indigo-400/20 border-indigo-400 hover:bg-indigo-400/35 text-indigo-100";
+                          if (isAnswered) {
+                            if (isCorrect) bubbleStyle = "bg-emerald-500 text-white border-emerald-600 scale-105 shadow-emerald-500/20";
+                            else if (isSelected) bubbleStyle = "bg-rose-500 text-white border-rose-600 scale-95 opacity-50";
+                            else bubbleStyle = "opacity-20 bg-slate-800 border-slate-700 text-slate-500 pointer-events-none";
+                          }
+
+                          return (
+                            <button
+                              key={b.id}
+                              disabled={isAnswered}
+                              onClick={() => handlePopBubble(b.idx)}
+                              style={{
+                                position: "absolute",
+                                left: `${b.x}%`,
+                                top: `${b.y}%`
+                              }}
+                              className={`w-36 h-20 rounded-[2rem] border-2 shadow-lg backdrop-blur-xs flex flex-col items-center justify-center p-2 text-[10px] leading-snug font-black transition-all text-center select-none active:scale-95 cursor-pointer ${bubbleStyle}`}
+                            >
+                              <span className="text-[8px] uppercase tracking-wider bg-black/10 px-1 rounded-sm mb-1">
+                                Opsi {String.fromCharCode(65 + b.idx)}
+                              </span>
+                              <span className="line-clamp-2">{b.text}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Explanations Banner */}
@@ -607,18 +1174,10 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
 
               {/* Footer Button Bar */}
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                {!isAnswered ? (
-                  <button
-                    onClick={handleVerifyAnswer}
-                    disabled={selectedOption === null}
-                    className="px-8 py-4 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-orange-500/10 transition-all flex items-center gap-2"
-                  >
-                    Periksa Jawaban <ChevronRight className="w-4 h-4" />
-                  </button>
-                ) : (
+                {isAnswered && (
                   <button
                     onClick={handleNextQuestion}
-                    className="px-8 py-4 bg-emerald-500 hover:bg-emerald-650 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-500/10 transition-all flex items-center gap-2"
+                    className="px-8 py-4 bg-emerald-500 hover:bg-emerald-650 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-500/10 transition-all flex items-center gap-2 cursor-pointer"
                   >
                     {currentQuestionIdx === activeLesson.questions.length - 1 ? 'Selesaikan Kelas' : 'Pertanyaan Berikutnya'} <ChevronRight className="w-4 h-4" />
                   </button>
@@ -628,6 +1187,7 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
           ) : (
             // COMPLETE STAGE CELEBRATION SCREEN
             <motion.div
+              key="complete"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               className="text-center py-8 space-y-6"
@@ -666,7 +1226,7 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                     playSound('click');
                     setActiveLesson(null);
                   }}
-                  className="px-10 py-4.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all"
+                  className="px-10 py-4.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all cursor-pointer"
                 >
                   Kembali ke Peta Kurikulum
                 </button>

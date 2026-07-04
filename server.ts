@@ -41,12 +41,33 @@ cloudinary.config({
   secure: true
 });
 
-const require = createRequire(import.meta.url);
-const utils = require('y-websocket/bin/utils');
-const setupWSConnection = utils.setupWSConnection;
+const currentUrl = typeof import.meta !== 'undefined' && import.meta.url ? import.meta.url : null;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+let safeFilename = '';
+try {
+  safeFilename = currentUrl ? fileURLToPath(currentUrl) : eval('__filename');
+} catch (e) {
+  safeFilename = '';
+}
+
+let safeDirname = '';
+try {
+  safeDirname = currentUrl ? path.dirname(safeFilename) : eval('__dirname');
+} catch (e) {
+  safeDirname = '';
+}
+
+const __filename = safeFilename;
+const __dirname = safeDirname;
+
+const localRequire = typeof createRequire !== 'undefined' && currentUrl
+  ? createRequire(currentUrl)
+  : (typeof require !== 'undefined' ? require : (moduleName: string) => {
+      throw new Error(`Cannot require ${moduleName} in this environment`);
+    });
+
+const utils = localRequire('y-websocket/bin/utils');
+const setupWSConnection = utils.setupWSConnection;
 
 // Configure Multer
 const upload = multer({
@@ -206,6 +227,14 @@ async function startServer() {
         return res.status(400).json({ error: 'Messages array is required', status: 'error' });
       }
 
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(400).json({
+          status: 'error',
+          error: '⚠️ Fitur AI Auto Paham belum aktif karena GEMINI_API_KEY belum dikonfigurasi di server web/hosting Anda. Silakan tambahkan variabel lingkungan GEMINI_API_KEY dengan API key Google AI Studio Anda di settings cPanel, Cloud Run, Vercel, VPS, atau file .env server Anda.'
+        });
+      }
+
       const ai = getGeminiClient();
       
       const contents = messages.map((m: any) => ({
@@ -244,6 +273,15 @@ async function startServer() {
   app.post('/api/skripsi-bypass/generate-title', async (req: any, res: any) => {
     try {
       const { keyword } = req.body;
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(400).json({
+          status: 'error',
+          error: '⚠️ Fitur AI Skripsi Bypass belum aktif karena GEMINI_API_KEY belum dikonfigurasi di server web/hosting Anda. Silakan tambahkan variabel lingkungan GEMINI_API_KEY dengan API key Google AI Studio Anda di settings cPanel, Cloud Run, Vercel, VPS, atau file .env server Anda.'
+        });
+      }
+
       const ai = getGeminiClient();
 
       const prompt = `Generate a highly sophisticated, humorous, and hyper-academic title for an International Relations undergraduate thesis (Shinta 2 journal standard) in Indonesian. It should sound extremely complex, using big academic buzzwords (e.g., 'Dinamika', 'Konstelasi', 'Dekonstruksi', 'Hegemoni', 'Negosiasi', 'Paradoks', 'Sekuritisasi', 'Ambiguitas') but also contain a subtle humorous undertone or be slightly absurd (yet sound 100% real to a professor). 
