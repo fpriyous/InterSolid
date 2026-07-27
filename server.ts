@@ -69,14 +69,18 @@ try {
 const __filename = safeFilename;
 const __dirname = safeDirname;
 
-const localRequire = typeof createRequire !== 'undefined' && currentUrl
-  ? createRequire(currentUrl)
-  : (typeof require !== 'undefined' ? require : (moduleName: string) => {
-      throw new Error(`Cannot require ${moduleName} in this environment`);
-    });
-
-const utils = localRequire('y-websocket/bin/utils');
-const setupWSConnection = utils.setupWSConnection;
+let setupWSConnection: any = null;
+try {
+  const localRequire = typeof createRequire !== 'undefined' && currentUrl
+    ? createRequire(currentUrl)
+    : (typeof require !== 'undefined' ? require : (moduleName: string) => {
+        throw new Error(`Cannot require ${moduleName} in this environment`);
+      });
+  const utils = localRequire('y-websocket/bin/utils');
+  setupWSConnection = utils?.setupWSConnection;
+} catch (e) {
+  console.warn('[Collaboration] y-websocket module could not be required in this environment:', e);
+}
 
 // Configure Multer
 const upload = multer({
@@ -544,7 +548,11 @@ async function startServer() {
       
       console.log(`[Collaboration] 🟢 New client connected to room: "${roomName}" from: ${req.url}`);
       
-      setupWSConnection(ws, req, { docName: roomName, gc: true });
+      if (setupWSConnection) {
+        setupWSConnection(ws, req, { docName: roomName, gc: true });
+      } else {
+        console.warn('[Collaboration] setupWSConnection is not available.');
+      }
       
       ws.on('error', (err) => {
         console.error(`[Collaboration] ❌ WS Error (Room: ${roomName}):`, err);
