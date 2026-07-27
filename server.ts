@@ -111,25 +111,53 @@ function getGeminiClient() {
 }
 
 // Helper for calling DeepSeek API (V3/R1)
+function getDeepSeekKey() {
+  const key = process.env.DEEPSEEK_API_KEY?.trim();
+  if (key) return key;
+  return 'sk-5d01a10d9c4246c6b69c0064f7fc79b8';
+}
+
 async function callDeepSeek(modelName: string, systemInstruction: string, messages: any[]) {
-  const dsKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.trim() : '';
+  const dsKey = getDeepSeekKey();
   if (!dsKey) {
-    throw new Error("⚠️ DEEPSEEK_API_KEY belum dikonfigurasi di server/Vercel. Silakan tambahkan variabel lingkungan DEEPSEEK_API_KEY di dashboard Vercel Anda.");
+    throw new Error("⚠️ DEEPSEEK_API_KEY belum dikonfigurasi di server.");
   }
 
-  const dsMessages = [];
+  const dsMessages: any[] = [];
 
-  if (systemInstruction) {
-    dsMessages.push({ role: 'system', content: systemInstruction });
+  if (systemInstruction && systemInstruction.trim()) {
+    dsMessages.push({ role: 'system', content: systemInstruction.trim() });
   }
 
+  let foundFirstUser = false;
   for (const m of messages) {
     const role = m.role === 'user' ? 'user' : 'assistant';
     const textLimit = 6000;
-    const content = m.text && m.text.length > textLimit 
-      ? m.text.substring(0, textLimit) + "... [Teks dipotong demi menjaga kestabilan konteks]" 
-      : (m.text || '');
-    dsMessages.push({ role, content });
+    const rawText = m.text || '';
+    const content = rawText.length > textLimit 
+      ? rawText.substring(0, textLimit) + "... [Teks dipotong demi menjaga kestabilan konteks]" 
+      : rawText;
+
+    if (!content.trim()) continue;
+
+    // Drop assistant welcome messages before first user prompt to preserve valid message order
+    if (!foundFirstUser && role === 'assistant') {
+      continue;
+    }
+
+    if (role === 'user') {
+      foundFirstUser = true;
+    }
+
+    if (dsMessages.length > 0 && dsMessages[dsMessages.length - 1].role === role) {
+      dsMessages[dsMessages.length - 1].content += "\n\n" + content;
+    } else {
+      dsMessages.push({ role, content });
+    }
+  }
+
+  if (!foundFirstUser) {
+    dsMessages.push({ role: 'user', content: 'Halo' });
   }
 
   const payload: any = {
@@ -267,13 +295,14 @@ app.use('/api', (req, res, next) => {
         return res.status(400).json({ error: 'Messages array is required', status: 'error' });
       }
 
-      const activeModel = (model && model.startsWith('deepseek-')) ? model : 'deepseek-chat';
+      const requestedModel = model || 'deepseek-chat';
+      const hasDeepSeekKey = !!getDeepSeekKey();
+      const hasGeminiKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
 
-      // Check key configuration
-      if (!process.env.DEEPSEEK_API_KEY) {
+      if (!hasDeepSeekKey && !hasGeminiKey) {
         return res.status(400).json({
           status: 'error',
-          error: '⚠️ Fitur AI DeepSeek belum aktif karena DEEPSEEK_API_KEY belum dikonfigurasi di variabel lingkungan server / Vercel.'
+          error: '⚠️ API Key AI belum dikonfigurasi. Silakan tambahkan variabel DEEPSEEK_API_KEY atau GEMINI_API_KEY di Environment Variables Vercel/Hosting Anda.'
         });
       }
 
@@ -349,8 +378,41 @@ Target Anda bukan agar mereka berkata "AI ini jawabannya lengkap", melainkan aga
           }).join("\n");
       }
 
-      // Call DeepSeek model exclusively
-      const replyText = await callDeepSeek(activeModel, systemInstructionWithContext, messages);
+      let replyText = '';
+
+      // Check if we should call DeepSeek
+      if (requestedModel.startsWith('deepseek-') && hasDeepSeekKey) {
+        replyText = await callDeepSeek(requestedModel, systemInstructionWithContext, messages);
+      } else if (hasGeminiKey) {
+        // Use Gemini (Google GenAI)
+        const ai = getGeminiClient();
+        const textLimit = 6000;
+        const contents = messages.map((m: any) => {
+          const text = m.text && m.text.length > textLimit 
+            ? m.text.substring(0, textLimit) + " ... [Pesan terpotong]" 
+            : (m.text || '');
+          return {
+            role: m.role === 'user' ? 'user' : 'model',
+            parts: [{ text }]
+          };
+        });
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents,
+          config: {
+            systemInstruction: systemInstructionWithContext,
+            temperature: 0.7
+          }
+        });
+        replyText = response.text || '';
+      } else if (hasDeepSeekKey) {
+        // Fallback to DeepSeek if no Gemini key
+        replyText = await callDeepSeek('deepseek-chat', systemInstructionWithContext, messages);
+      } else {
+        throw new Error("Tidak ada API key yang aktif.");
+      }
+
       return res.json({ text: replyText, status: 'success' });
 
     } catch (error: any) {
@@ -366,11 +428,13 @@ Target Anda bukan agar mereka berkata "AI ini jawabannya lengkap", melainkan aga
   app.post(['/api/skripsi-bypass/generate-title', '/skripsi-bypass/generate-title'], async (req: any, res: any) => {
     try {
       const { keyword } = req.body;
+      const hasDeepSeekKey = !!getDeepSeekKey();
+      const hasGeminiKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
 
-      if (!process.env.DEEPSEEK_API_KEY) {
+      if (!hasDeepSeekKey && !hasGeminiKey) {
         return res.status(400).json({
           status: 'error',
-          error: '⚠️ Fitur AI Skripsi Bypass belum aktif karena DEEPSEEK_API_KEY belum dikonfigurasi di server web/hosting Anda.'
+          error: '⚠️ Fitur AI Skripsi Bypass belum aktif karena DEEPSEEK_API_KEY atau GEMINI_API_KEY belum dikonfigurasi di server.'
         });
       }
 
@@ -385,10 +449,24 @@ Also generate:
 
 Format the output strictly as a JSON object with these keys: "title", "abstract", "introduction", "theories", "findings", "grade", "notes". Do not wrap in markdown or code blocks.`;
 
-      const rawReply = await callDeepSeek('deepseek-chat', 'You are a helpful JSON generator. Output valid JSON only without markdown backticks.', [{ role: 'user', text: prompt }]);
-      
-      const cleanJson = rawReply.replace(/```json/g, '').replace(/```/g, '').trim();
-      const data = JSON.parse(cleanJson);
+      let data: any = {};
+      if (hasDeepSeekKey) {
+        const rawReply = await callDeepSeek('deepseek-chat', 'You are a helpful JSON generator. Output valid JSON only without markdown backticks.', [{ role: 'user', text: prompt }]);
+        const cleanJson = rawReply.replace(/```json/g, '').replace(/```/g, '').trim();
+        data = JSON.parse(cleanJson);
+      } else {
+        const ai = getGeminiClient();
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.8
+          }
+        });
+        data = JSON.parse(response.text || '{}');
+      }
+
       return res.json({ data, status: 'success' });
     } catch (error: any) {
       console.error('[Skripsi Bypass Error]:', error);

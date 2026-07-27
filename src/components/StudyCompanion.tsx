@@ -934,6 +934,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                       >
                         <option value="deepseek-chat">🧠 DeepSeek V3 (Chat)</option>
                         <option value="deepseek-reasoner">🧐 DeepSeek R1 (Reasoner)</option>
+                        <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Auto)</option>
                       </select>
 
                       {activeThreadId && (
