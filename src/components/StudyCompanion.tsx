@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, Send, Bot, User, Trash2, ArrowRight, Loader2, 
   BookOpen, Plus, MessageSquare, Edit2, Check, X, Database, 
-  Search, BookOpenText, GraduationCap, Clock, HelpCircle, AlertCircle
+  Search, BookOpenText, GraduationCap, Clock, HelpCircle, AlertCircle, Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -26,6 +26,8 @@ interface ChatThread {
   messages: ChatMessage[];
   createdAt: any;
   updatedAt: any;
+  personality?: string;
+  model?: string;
 }
 
 interface KnowledgeItem {
@@ -54,6 +56,19 @@ const KNOWLEDGE_CATEGORIES = [
   "Lain-lain"
 ];
 
+const PERSONALITIES = [
+  {
+    id: 'default',
+    name: 'THE CATALYST',
+    roleName: 'The Catalyst',
+    icon: '✨',
+    desc: 'Bukan sekadar chatbot biasa. Manifestasi dari keyakinan mutlak bahwa setiap mahasiswa memiliki potensi intelektual yang jauh lebih besar daripada yang mereka kira.',
+    color: 'from-violet-600 to-indigo-800',
+    avatarColor: 'bg-violet-600',
+    welcomeText: 'Halo, Rekan Diskusi! 👋\n\nSaya **The Catalyst**. Saya di sini bukan untuk menyuapi Anda jawaban instan atau menyelesaikan tugas kuliah Anda secara pasif.\n\nSaya hadir untuk bermitra dengan Anda, meruntuhkan rintangan belajar, dan bersama-sama menembus batas pemahaman Hubungan Internasional kita. Di sini, proses berpikir, rasa penasaran, dan keberanian menganalisis jauh lebih berharga daripada hafalan kaku atau sekadar deretan angka UTS/UAS.\n\nMari kita mulai. Ada isu global, fenomena riil, atau konsep HI apa yang membuat Anda penasaran hari ini? ... Silakan ajukan pertanyaan Anda atau klik salah satu topik di bawah! 👇'
+  }
+];
+
 export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: boolean }) {
   const [activeTab, setActiveTab] = useState<'chat' | 'knowledge'>('chat');
   
@@ -66,6 +81,8 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [selectedPersonality, setSelectedPersonality] = useState<string>('default');
+  const [selectedModel, setSelectedModel] = useState<string>('deepseek-chat');
   
   // Knowledge States
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
@@ -81,6 +98,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
   const [newContent, setNewContent] = useState('');
   const [formError, setFormError] = useState('');
   const [submittingKnowledge, setSubmittingKnowledge] = useState(false);
+  const [isParsingFile, setIsParsingFile] = useState(false);
 
   // Selected article for viewing modal
   const [activeKnowledgeItem, setActiveKnowledgeItem] = useState<KnowledgeItem | null>(null);
@@ -107,7 +125,9 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
           title: data.title || 'Obrolan Tanpa Judul',
           messages: data.messages || [],
           createdAt: data.createdAt,
-          updatedAt: data.updatedAt
+          updatedAt: data.updatedAt,
+          personality: data.personality || 'default',
+          model: data.model || 'deepseek-chat'
         });
       });
       
@@ -141,9 +161,13 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
       const activeThread = threads.find(t => t.id === activeThreadId);
       if (activeThread) {
         setMessages(activeThread.messages);
+        setSelectedPersonality(activeThread.personality || 'default');
+        setSelectedModel(activeThread.model || 'deepseek-chat');
       }
     } else {
       setMessages([]);
+      setSelectedPersonality('default');
+      setSelectedModel('deepseek-chat');
     }
   }, [activeThreadId, threads]);
 
@@ -186,13 +210,14 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
   }, []);
 
   // 3. Create a new chat thread
-  const handleCreateThread = async (initialTitle: string = 'Obrolan Baru') => {
+  const handleCreateThread = async (initialTitle: string = 'Obrolan Baru', personalityId: string = selectedPersonality) => {
     if (!user?.uid) return;
     try {
+      const activePers = PERSONALITIES.find(p => p.id === personalityId) || PERSONALITIES[0];
       const defaultWelcome: ChatMessage = {
         id: 'welcome_' + Date.now(),
         role: 'model',
-        text: `Halo, **Solidaritas!** 👋\n\nSaya **Auto Paham**, tutor AI khusus kelas **InterSolid**. Saya di sini siap membantu kamu menjinakkan teori-teori Hubungan Internasional yang ruwet—mulai dari Realisme sampai Post-Kolonialisme—dengan analogi tongkrongan yang gampang dipahami.\n\nAda konsep HI yang bikin kamu pusing hari ini? Silakan tanya langsung atau klik tombol pertanyaan di bawah! 👇`,
+        text: activePers.welcomeText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
@@ -200,13 +225,15 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
         userId: user.uid,
         title: initialTitle,
         messages: [defaultWelcome],
+        personality: activePers.id,
+        model: selectedModel,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
       setActiveThreadId(docRef.id);
       setMessages([defaultWelcome]);
-      logPortalActivity('study_companion', 'Membuka sesi konsultasi baru dengan Auto Paham AI', user);
+      logPortalActivity('study_companion', `Membuka sesi konsultasi baru dengan ${activePers.name}`, user);
     } catch (err: any) {
       console.error("Error creating chat thread:", err);
       alert("Gagal membuat obrolan baru: " + err.message);
@@ -243,6 +270,99 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
     } catch (err: any) {
       console.error("Error deleting thread:", err);
       alert("Gagal menghapus obrolan: " + err.message);
+    }
+  };
+
+  // 5.5 Handle PDF/TXT file upload & text extraction
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFormError('');
+    setIsParsingFile(true);
+
+    try {
+      // Handle plain text files
+      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const text = event.target?.result as string;
+          setNewContent(text);
+          if (!newTitle) {
+            const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+            setNewTitle(titleWithoutExt);
+          }
+          setIsParsingFile(false);
+        };
+        reader.onerror = () => {
+          setFormError("Gagal membaca file teks.");
+          setIsParsingFile(false);
+        };
+        reader.readAsText(file);
+        return;
+      }
+
+      // Handle PDF files
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        if (!(window as any).pdfjsLib) {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          document.head.appendChild(script);
+          await new Promise((resolve) => {
+            script.onload = resolve;
+          });
+        }
+
+        const pdfjsLib = (window as any).pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const typedarray = new Uint8Array(event.target?.result as ArrayBuffer);
+            const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+            
+            let extractedText = '';
+            const maxPages = Math.min(pdf.numPages, 30);
+            
+            for (let i = 1; i <= maxPages; i++) {
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              const pageText = textContent.items.map((item: any) => item.str).join(' ');
+              extractedText += pageText + '\n\n';
+            }
+
+            if (pdf.numPages > 30) {
+              extractedText += `\n\n... [Materi dipotong karena dokumen asli memiliki ${pdf.numPages} halaman. Batas ekstraksi adalah 30 halaman awal untuk menjaga kestabilan database]`;
+            }
+
+            setNewContent(extractedText.trim());
+            if (!newTitle) {
+              const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+              setNewTitle(titleWithoutExt);
+            }
+            logPortalActivity('study_companion', `Berhasil mengekstrak teks dari PDF "${file.name}"`, user);
+          } catch (err: any) {
+            console.error("Error reading PDF content:", err);
+            setFormError(`Gagal mengekstrak konten PDF: ${err.message || 'Format tidak didukung'}`);
+          } finally {
+            setIsParsingFile(false);
+          }
+        };
+        reader.onerror = () => {
+          setFormError("Gagal membaca file PDF.");
+          setIsParsingFile(false);
+        };
+        reader.readAsArrayBuffer(file);
+        return;
+      }
+
+      setFormError("Format file tidak didukung. Harap unggah file PDF (.pdf) atau Teks (.txt) saja.");
+      setIsParsingFile(false);
+    } catch (err: any) {
+      console.error("File upload error:", err);
+      setFormError(`Gagal membaca file: ${err.message}`);
+      setIsParsingFile(false);
     }
   };
 
@@ -315,6 +435,40 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
     setIsAddingKnowledge(true);
   };
 
+  // Update personality for the active thread
+  const handleSelectPersonality = async (persId: string) => {
+    setSelectedPersonality(persId);
+    if (activeThreadId) {
+      try {
+        const threadRef = doc(db, 'study_chats', activeThreadId);
+        await updateDoc(threadRef, {
+          personality: persId,
+          updatedAt: serverTimestamp()
+        });
+        logPortalActivity('study_companion', `Mengubah tutor pendamping menjadi ${PERSONALITIES.find(p => p.id === persId)?.name}`, user);
+      } catch (err) {
+        console.error("Gagal mengubah kepribadian di Firestore:", err);
+      }
+    }
+  };
+
+  // Update model for the active thread
+  const handleSelectModel = async (modelId: string) => {
+    setSelectedModel(modelId);
+    if (activeThreadId) {
+      try {
+        const threadRef = doc(db, 'study_chats', activeThreadId);
+        await updateDoc(threadRef, {
+          model: modelId,
+          updatedAt: serverTimestamp()
+        });
+        logPortalActivity('study_companion', `Mengubah model otak AI menjadi ${modelId}`, user);
+      } catch (err) {
+        console.error("Gagal mengubah model di Firestore:", err);
+      }
+    }
+  };
+
   // 9. Send Chat message & dynamically ground with Knowledge Base
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isLoading) return;
@@ -324,10 +478,11 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
     // Create a thread if none exists
     if (!threadIdToUse) {
       try {
+        const activePers = PERSONALITIES.find(p => p.id === selectedPersonality) || PERSONALITIES[0];
         const defaultWelcome: ChatMessage = {
           id: 'welcome_' + Date.now(),
           role: 'model',
-          text: `Halo, **Solidaritas!** 👋\n\nSaya **Auto Paham**, tutor AI khusus kelas **InterSolid**. Saya di sini siap membantu kamu menjinakkan teori-teori Hubungan Internasional yang ruwet—mulai dari Realisme sampai Post-Kolonialisme—dengan analogi tongkrongan yang gampang dipahami.\n\nAda konsep HI yang bikin kamu pusing hari ini? Silakan tanya langsung atau klik tombol pertanyaan di bawah! 👇`,
+          text: activePers.welcomeText,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
 
@@ -335,6 +490,8 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
           userId: user.uid,
           title: textToSend.substring(0, 24) + (textToSend.length > 24 ? '...' : ''),
           messages: [defaultWelcome],
+          personality: activePers.id,
+          model: selectedModel,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -396,6 +553,8 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           messages: chatHistory,
+          personality: selectedPersonality,
+          model: selectedModel,
           knowledgeContext: knowledgeContext.map(k => ({
             title: k.title,
             category: k.category,
@@ -404,8 +563,22 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
         })
       });
 
-      const data = await res.json();
-      if (data.status === 'success') {
+      const contentType = res.headers.get('content-type') || '';
+      let data: any = {};
+
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const rawText = await res.text();
+        console.error('[Server Non-JSON Response]:', rawText);
+        if (!res.ok) {
+          throw new Error(`Server Vercel mengembalikan status HTTP ${res.status}. Pastikan DEEPSEEK_API_KEY sudah dikonfigurasi di Environment Variables Vercel Dashboard Anda.`);
+        } else {
+          throw new Error(`Respon server tidak valid: ${rawText.substring(0, 100)}`);
+        }
+      }
+
+      if (res.ok && data.status === 'success') {
         const aiMsg: ChatMessage = {
           id: Math.random().toString(),
           role: 'model',
@@ -432,14 +605,14 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
         });
 
       } else {
-        throw new Error(data.error || "Gagal menghubungi server");
+        throw new Error(data.error || `Gagal memproses AI (HTTP ${res.status})`);
       }
     } catch (err: any) {
       console.error("AI Companion error:", err);
       const errMsg: ChatMessage = {
         id: Math.random().toString(),
         role: 'model',
-        text: `⚠️ **Waduh, koneksi diplomatik terputus!**\n\nTerjadi gangguan jaringan saat menghubungi pusat server Auto Paham. Silakan coba kirim ulang pesan kamu. Error: *${err.message || 'Unknown network failure'}*`,
+        text: `⚠️ **Gagal Menghubungi DeepSeek AI**\n\n${err.message || 'Terjadi gangguan koneksi ke server.'}\n\n*Petunjuk:* Jika Anda menggunakan Vercel, pastikan Anda telah memasukkan \`DEEPSEEK_API_KEY\` di menu **Settings > Environment Variables** pada Vercel Dashboard, lalu lakukan Redeploy.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errMsg]);
@@ -578,28 +751,33 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
           >
             {/* Sidebar Left: Info & Chat Session list */}
             <div className="lg:col-span-1 space-y-4">
-              {/* Core AI Profile widget */}
-              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-500/10">
-                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md">
-                  <Sparkles className="w-6 h-6 text-yellow-200 animate-pulse" />
-                </div>
-                <h3 className="font-serif text-xl font-bold mb-2">Auto Paham</h3>
-                <span className="text-[10px] uppercase tracking-widest bg-white/10 px-2.5 py-1 rounded-full font-bold">AI Companion</span>
-                <p className="text-xs text-indigo-100 mt-4 leading-relaxed">
-                  Tutor HI yang cerdas dan suportif. Setiap obrolan disimpan di akun pribadimu dan tidak tercampur dengan kawan lain!
-                </p>
-                
-                {/* Micro RAG Indicator */}
-                <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-indigo-100">
-                  <span className="flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5" />
-                    Memori Database Ilmu:
-                  </span>
-                  <span className="font-bold bg-white/10 px-2 py-0.5 rounded">
-                    {knowledgeItems.length} Artikel
-                  </span>
-                </div>
-              </div>
+              {/* Dynamic Core AI Profile widget */}
+              {(() => {
+                const activePers = PERSONALITIES.find(p => p.id === selectedPersonality) || PERSONALITIES[0];
+                return (
+                  <div className={`bg-gradient-to-br ${activePers.color} rounded-3xl p-6 text-white shadow-xl shadow-indigo-500/10 transition-all duration-300`}>
+                    <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4 backdrop-blur-md text-xl animate-pulse">
+                      {activePers.icon}
+                    </div>
+                    <h3 className="font-serif text-xl font-bold mb-1">{activePers.roleName}</h3>
+                    <span className="text-[10px] uppercase tracking-widest bg-white/10 px-2.5 py-0.5 rounded-full font-bold">Tutor HI Aktif</span>
+                    <p className="text-xs text-indigo-100 mt-4 leading-relaxed">
+                      {activePers.desc}
+                    </p>
+                    
+                    {/* Micro RAG Indicator */}
+                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-indigo-100">
+                      <span className="flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5" />
+                        Memori Database Ilmu:
+                      </span>
+                      <span className="font-bold bg-white/10 px-2 py-0.5 rounded">
+                        {knowledgeItems.length} Artikel
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Chat Threads Container */}
               <div className="bg-white dark:bg-[#141e26] rounded-3xl p-5 border border-blue-50 dark:border-blue-900/10 shadow-sm flex flex-col max-h-[450px]">
@@ -731,32 +909,49 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
             {/* Main Column: active chat stream & quick prompts */}
             <div className="lg:col-span-3 flex flex-col h-[650px] bg-white dark:bg-[#141e26] rounded-[32px] shadow-xl border border-blue-50 dark:border-blue-900/10 overflow-hidden">
               {/* Chat Header */}
-              <div className="px-6 py-4 bg-gray-50/50 dark:bg-gray-900/30 border-b border-blue-50 dark:border-blue-900/10 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-950/30 rounded-2xl flex items-center justify-center text-indigo-500">
-                    <Bot className={`w-5 h-5 ${isLoading ? 'animate-bounce' : ''}`} />
-                  </div>
-                  <div>
-                    <h3 className="font-serif font-bold text-sm text-gray-800 dark:text-white">
-                      {threads.find(t => t.id === activeThreadId)?.title || 'Mulai Obrolan Baru'}
-                    </h3>
-                    <p className="text-[9px] uppercase tracking-wider text-gray-400 font-bold">Auto Paham v1.5</p>
-                  </div>
-                </div>
+              {(() => {
+                const activePers = PERSONALITIES.find(p => p.id === selectedPersonality) || PERSONALITIES[0];
+                return (
+                  <div className="px-6 py-4 bg-gray-50/50 dark:bg-gray-900/30 border-b border-blue-50 dark:border-blue-900/10 flex items-center justify-between animate-fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 ${activePers.avatarColor} text-white rounded-2xl flex items-center justify-center text-lg shadow-sm shrink-0`}>
+                        {activePers.icon}
+                      </div>
+                      <div>
+                        <h3 className="font-serif font-bold text-sm text-gray-800 dark:text-white">
+                          {threads.find(t => t.id === activeThreadId)?.title || 'Mulai Obrolan Baru'}
+                        </h3>
+                        <p className="text-[9px] uppercase tracking-wider text-gray-400 font-bold">Tutor Aktif: {activePers.roleName}</p>
+                      </div>
+                    </div>
 
-                {activeThreadId && (
-                  <button
-                    onClick={(e) => {
-                      const active = threads.find(t => t.id === activeThreadId);
-                      if (active) handleDeleteThread(active.id, active.title, e);
-                    }}
-                    className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all"
-                    title="Reset Obrolan Ini"
-                  >
-                    <Trash2 className="w-4.5 h-4.5" />
-                  </button>
-                )}
-              </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => handleSelectModel(e.target.value)}
+                        className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-[10px] font-bold text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-xl border-none focus:outline-none transition-all cursor-pointer"
+                        title="Pilih Otak AI"
+                      >
+                        <option value="deepseek-chat">🧠 DeepSeek V3 (Chat)</option>
+                        <option value="deepseek-reasoner">🧐 DeepSeek R1 (Reasoner)</option>
+                      </select>
+
+                      {activeThreadId && (
+                        <button
+                          onClick={(e) => {
+                            const active = threads.find(t => t.id === activeThreadId);
+                            if (active) handleDeleteThread(active.id, active.title, e);
+                          }}
+                          className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all"
+                          title="Reset Obrolan Ini"
+                        >
+                          <Trash2 className="w-4.5 h-4.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Message Stream */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -783,7 +978,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                         className={`flex gap-3 max-w-[85%] ${m.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
                       >
                         {/* Avatar */}
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm text-sm ${
                           m.role === 'user' 
                             ? 'bg-indigo-500 text-white' 
                             : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500'
@@ -795,7 +990,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                               <User className="w-4 h-4" />
                             )
                           ) : (
-                            <Bot className="w-4 h-4" />
+                            PERSONALITIES.find(p => p.id === (threads.find(t => t.id === activeThreadId)?.personality || 'default'))?.icon || '🎓'
                           )}
                         </div>
 
@@ -823,13 +1018,15 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                         animate={{ opacity: 1, y: 0 }}
                         className="flex gap-3 max-w-[85%]"
                       >
-                        <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 flex items-center justify-center shrink-0">
-                          <Bot className="w-4 h-4" />
+                        <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 flex items-center justify-center shrink-0 text-sm">
+                          {PERSONALITIES.find(p => p.id === selectedPersonality)?.icon || '🎓'}
                         </div>
                         <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-3xl rounded-tl-none border border-blue-50/40 dark:border-blue-900/5">
                           <div className="flex items-center gap-2">
                             <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
-                            <span className="text-xs text-gray-400 font-medium">Auto Paham sedang mengkaji teori & materi kelas...</span>
+                            <span className="text-xs text-gray-400 font-medium">
+                              {PERSONALITIES.find(p => p.id === selectedPersonality)?.roleName || 'Auto Paham'} sedang merumuskan jawaban...
+                            </span>
                           </div>
                         </div>
                       </motion.div>
@@ -1010,6 +1207,34 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Ekstraksi Otomatis via PDF / TXT</label>
+                    <div className="bg-gray-50 dark:bg-gray-900/40 p-5 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center text-center transition-all hover:bg-gray-100/50 dark:hover:bg-gray-900/60 relative group min-h-[110px]">
+                      <input
+                        type="file"
+                        accept=".pdf,.txt"
+                        onChange={handleFileUpload}
+                        disabled={isParsingFile}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                      />
+                      <div className="flex flex-col items-center gap-2">
+                        {isParsingFile ? (
+                          <>
+                            <Loader2 className="w-7 h-7 text-indigo-500 animate-spin" />
+                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">Mengekstrak isi dokumen...</span>
+                            <span className="text-[10px] text-gray-400">Teks PDF sedang dikonversi & diekstrak langsung ke kolom di bawah</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-7 h-7 text-indigo-400 group-hover:text-indigo-500 transition-colors" />
+                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">Punya PDF atau Teks Materi? Unggah di Sini</span>
+                            <span className="text-[10px] text-gray-400">Mendukung file .pdf atau .txt (Maksimal 30 halaman pertama)</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 

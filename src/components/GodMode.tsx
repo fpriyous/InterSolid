@@ -59,15 +59,24 @@ export default function GodMode({ isOpen, onClose }: { isOpen: boolean; onClose:
         body: JSON.stringify({ keyword: keyword.trim() })
       });
 
-      const result = await res.json();
-      if (result.status === 'success') {
+      const contentType = res.headers.get('content-type') || '';
+      let result: any = {};
+      if (contentType.includes('application/json')) {
+        result = await res.json();
+      } else {
+        const rawText = await res.text();
+        console.error('[GodMode Server Response Error]:', rawText);
+        throw new Error(`Server mengembalikan status HTTP ${res.status}. Pastikan DEEPSEEK_API_KEY sudah terpasang di Vercel Environment Variables.`);
+      }
+
+      if (res.ok && result.status === 'success') {
         setSkripsi(result.data);
       } else {
         throw new Error(result.error || "Gagal membuat skripsi");
       }
     } catch (e: any) {
       console.error(e);
-      (window as any).showAppAlert?.('Gagal Memproses', 'Sistem gagal menghubungi server AI.', 'error');
+      (window as any).showAppAlert?.('Gagal Memproses', e.message || 'Sistem gagal menghubungi server AI.', 'error');
     } finally {
       setGenerating(false);
     }
