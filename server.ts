@@ -69,16 +69,18 @@ const __filename = safeFilename;
 const __dirname = safeDirname;
 
 let setupWSConnection: any = null;
-try {
-  const localRequire = typeof createRequire !== 'undefined' && currentUrl
-    ? createRequire(currentUrl)
-    : (typeof require !== 'undefined' ? require : (moduleName: string) => {
-        throw new Error(`Cannot require ${moduleName} in this environment`);
-      });
-  const utils = localRequire('y-websocket/bin/utils');
-  setupWSConnection = utils?.setupWSConnection;
-} catch (e) {
-  console.warn('[Collaboration] y-websocket module could not be required in this environment:', e);
+if (!process.env.VERCEL) {
+  try {
+    const localRequire = typeof createRequire !== 'undefined' && currentUrl
+      ? createRequire(currentUrl)
+      : (typeof require !== 'undefined' ? require : (moduleName: string) => {
+          throw new Error(`Cannot require ${moduleName} in this environment`);
+        });
+    const utils = localRequire('y-websocket/bin/utils');
+    setupWSConnection = utils?.setupWSConnection;
+  } catch (e) {
+    console.warn('[Collaboration] y-websocket module could not be required in this environment:', e);
+  }
 }
 
 // Configure Multer
@@ -365,6 +367,15 @@ async function callAIWithFallback(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Normalize URL for serverless environments (e.g. Vercel rewrites)
+app.use((req, res, next) => {
+  const matchedPath = req.headers['x-matched-path'] || req.headers['x-vercel-matched-path'];
+  if (matchedPath && typeof matchedPath === 'string' && !req.url.startsWith('/api/')) {
+    req.url = matchedPath;
+  }
+  next();
+});
 
 // Debug middleware to log ALL API requests
 app.use('/api', (req, res, next) => {
@@ -669,25 +680,29 @@ async function startServer() {
     }
   });
 
-  // Vite integration
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+  // Vite integration (for non-Vercel local dev and standalone Node server)
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production') {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${PORT}`);
     });
   }
-
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
