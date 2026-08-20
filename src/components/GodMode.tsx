@@ -66,7 +66,7 @@ export default function GodMode({ isOpen, onClose }: { isOpen: boolean; onClose:
       } else {
         const rawText = await res.text();
         console.error('[GodMode Server Response Error]:', rawText);
-        throw new Error(`Server mengembalikan status HTTP ${res.status}. Pastikan DEEPSEEK_API_KEY sudah terpasang di Vercel Environment Variables.`);
+        throw new Error(`Server mengembalikan status HTTP ${res.status}. Pastikan API Key Catalyst Flash (DEEPSEEK_API_KEY) sudah terpasang di Vercel Environment Variables.`);
       }
 
       if (res.ok && result.status === 'success') {

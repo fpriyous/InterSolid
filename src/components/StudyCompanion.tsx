@@ -82,7 +82,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [selectedPersonality, setSelectedPersonality] = useState<string>('default');
-  const [selectedModel, setSelectedModel] = useState<string>('deepseek-chat');
+  const [selectedModel, setSelectedModel] = useState<string>('deepseek-v4-flash');
   
   // Knowledge States
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
@@ -127,7 +127,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
           personality: data.personality || 'default',
-          model: data.model || 'deepseek-chat'
+          model: data.model || 'deepseek-v4-flash'
         });
       });
       
@@ -162,12 +162,12 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
       if (activeThread) {
         setMessages(activeThread.messages);
         setSelectedPersonality(activeThread.personality || 'default');
-        setSelectedModel(activeThread.model || 'deepseek-chat');
+        setSelectedModel(activeThread.model || 'deepseek-v4-flash');
       }
     } else {
       setMessages([]);
       setSelectedPersonality('default');
-      setSelectedModel('deepseek-chat');
+      setSelectedModel('deepseek-v4-flash');
     }
   }, [activeThreadId, threads]);
 
@@ -572,7 +572,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
         const rawText = await res.text();
         console.error('[Server Non-JSON Response]:', rawText);
         if (!res.ok) {
-          throw new Error(`Server Vercel mengembalikan status HTTP ${res.status}. Pastikan DEEPSEEK_API_KEY sudah dikonfigurasi di Environment Variables Vercel Dashboard Anda.`);
+          throw new Error(`Server Vercel mengembalikan status HTTP ${res.status}. Pastikan API Key Catalyst Flash (DEEPSEEK_API_KEY) sudah dikonfigurasi di Environment Variables Vercel Dashboard Anda.`);
         } else {
           throw new Error(`Respon server tidak valid: ${rawText.substring(0, 100)}`);
         }
@@ -612,7 +612,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
       const errMsg: ChatMessage = {
         id: Math.random().toString(),
         role: 'model',
-        text: `⚠️ **Gagal Menghubungi DeepSeek AI**\n\n${err.message || 'Terjadi gangguan koneksi ke server.'}\n\n*Petunjuk:* Jika Anda menggunakan Vercel, pastikan Anda telah memasukkan \`DEEPSEEK_API_KEY\` di menu **Settings > Environment Variables** pada Vercel Dashboard, lalu lakukan Redeploy.`,
+        text: `⚠️ **Gagal Menghubungi Catalyst Flash AI**\n\n${err.message || 'Terjadi gangguan koneksi ke server.'}\n\n*Petunjuk:* Jika Anda menggunakan Vercel, pastikan Anda telah memasukkan \`DEEPSEEK_API_KEY\` di menu **Settings > Environment Variables** pada Vercel Dashboard, lalu lakukan Redeploy.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errMsg]);
@@ -926,16 +926,13 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <select
-                        value={selectedModel}
-                        onChange={(e) => handleSelectModel(e.target.value)}
-                        className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-[10px] font-bold text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-xl border-none focus:outline-none transition-all cursor-pointer"
-                        title="Pilih Otak AI"
+                      <div 
+                        className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5"
+                        title="Model AI Utama"
                       >
-                        <option value="deepseek-chat">🧠 DeepSeek V3 (Chat)</option>
-                        <option value="deepseek-reasoner">🧐 DeepSeek R1 (Reasoner)</option>
-                        <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Auto)</option>
-                      </select>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        ⚡ Catalyst Flash
+                      </div>
 
                       {activeThreadId && (
                         <button

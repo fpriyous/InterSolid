@@ -2,7 +2,6 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { createRequire } from 'module';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
@@ -114,11 +113,23 @@ function getGeminiClient() {
   return aiClient;
 }
 
-// Helper for calling DeepSeek API (V3/R1)
+// Helper for calling Catalyst Flash / Intersolid AI API
 function getDeepSeekKey() {
-  const key = process.env.DEEPSEEK_API_KEY?.trim();
-  if (key) return key;
-  return 'sk-5d01a10d9c4246c6b69c0064f7fc79b8';
+  const key = process.env.INTERSOLID_API_KEY?.trim() || process.env.DEEPSEEK_API_KEY?.trim();
+  return key || '';
+}
+
+function getDeepSeekBaseUrl() {
+  const custom = process.env.INTERSOLID_BASE_URL?.trim() || process.env.DEEPSEEK_BASE_URL?.trim();
+  if (custom) {
+    let clean = custom.endsWith('/') ? custom.slice(0, -1) : custom;
+    if (!clean.endsWith('/chat/completions') && !clean.endsWith('/v1')) {
+      clean = `${clean}/v1`;
+    }
+    return clean.endsWith('/chat/completions') ? clean : `${clean}/chat/completions`;
+  }
+  // Default to b.ai OpenAI-compatible endpoint
+  return 'https://api.b.ai/v1/chat/completions';
 }
 
 async function callDeepSeek(modelName: string, systemInstruction: string, messages: any[]) {
@@ -164,19 +175,19 @@ async function callDeepSeek(modelName: string, systemInstruction: string, messag
     dsMessages.push({ role: 'user', content: 'Halo' });
   }
 
+  // Use exact model ID as specified in DeepSeek guidelines
+  const actualModel = modelName && modelName.startsWith('deepseek-') ? modelName : 'deepseek-v4-flash';
+
   const payload: any = {
-    model: modelName,
-    messages: dsMessages
+    model: actualModel,
+    messages: dsMessages,
+    temperature: 0.7
   };
 
-  // DeepSeek R1 (reasoner) does not support temperature parameter
-  if (modelName !== 'deepseek-reasoner') {
-    payload.temperature = 0.7;
-  }
+  const endpointUrl = getDeepSeekBaseUrl();
+  console.log(`[DeepSeek API] Memanggil model "${actualModel}" di ${endpointUrl} dengan total ${dsMessages.length} pesan.`);
 
-  console.log(`[DeepSeek API] Memanggil model: "${modelName}" dengan total ${dsMessages.length} pesan.`);
-
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  let response = await fetch(endpointUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -184,6 +195,39 @@ async function callDeepSeek(modelName: string, systemInstruction: string, messag
     },
     body: JSON.stringify(payload)
   });
+
+  // Fallback to deepseek-chat if provider/endpoint returns model not found error
+  if (!response.ok && actualModel === 'deepseek-v4-flash') {
+    const errText = await response.text();
+    if (errText.includes('model') || response.status === 400 || response.status === 404) {
+      console.warn(`[DeepSeek API Warning] Model "${actualModel}" mengembalikan error, mencoba fallback ke "deepseek-chat"...`);
+      payload.model = 'deepseek-chat';
+      response = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${dsKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      console.error(`[DeepSeek API Error]: Status ${response.status} - ${errText}`);
+      let detailMsg = errText;
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.error?.message) {
+          detailMsg = errJson.error.message;
+        }
+      } catch {}
+      if (response.status === 401 || detailMsg.toLowerCase().includes('authentication fails') || detailMsg.toLowerCase().includes('invalid')) {
+        throw new Error(`⚠️ API Key DeepSeek / Intersolid tidak valid di ${endpointUrl} (Status 401: ${detailMsg}). Silakan periksa kembali API Key atau Base URL.`);
+      }
+      if (response.status === 402 || detailMsg.toLowerCase().includes('insufficient balance')) {
+        throw new Error(`⚠️ Saldo API Key DeepSeek / Intersolid Anda telah habis (Insufficient Balance - Status 402). Silakan isi ulang saldo di dashboard Anda.`);
+      }
+      throw new Error(`Kesalahan API DeepSeek / Intersolid (Status ${response.status}): ${detailMsg}`);
+    }
+  }
 
   if (!response.ok) {
     const errText = await response.text();
@@ -197,20 +241,126 @@ async function callDeepSeek(modelName: string, systemInstruction: string, messag
     } catch {
       // Keep raw errText
     }
-    throw new Error(`Kesalahan API DeepSeek (Status ${response.status}): ${detailMsg}`);
+    if (response.status === 401 || detailMsg.toLowerCase().includes('authentication fails') || detailMsg.toLowerCase().includes('invalid')) {
+      throw new Error(`⚠️ API Key DeepSeek / Intersolid tidak valid di ${endpointUrl} (Status 401: ${detailMsg}). Silakan periksa kembali API Key atau Base URL.`);
+    }
+    if (response.status === 402 || detailMsg.toLowerCase().includes('insufficient balance')) {
+      throw new Error(`⚠️ Saldo API Key DeepSeek / Intersolid Anda telah habis (Insufficient Balance - Status 402). Silakan isi ulang saldo di dashboard Anda.`);
+    }
+    throw new Error(`Kesalahan API DeepSeek / Intersolid (Status ${response.status}): ${detailMsg}`);
   }
 
   const data = await response.json();
   const replyText = data.choices?.[0]?.message?.content || '';
+  return replyText;
+}
 
-  // If it is DeepSeek R1, extract the thinking/reasoning process and prepend it
-  const reasoningContent = data.choices?.[0]?.message?.reasoning_content;
-  if (reasoningContent && modelName === 'deepseek-reasoner') {
-    console.log(`[DeepSeek R1] Berhasil mendapatkan reasoning_content: ${reasoningContent.length} karakter.`);
-    return `*Proses Berpikir DeepSeek R1:*\n> ${reasoningContent.trim().replace(/\n/g, '\n> ')}\n\n${replyText}`;
+// Helper for calling Gemini API as Fallback
+async function callGemini(systemInstruction: string, messages: any[], jsonMode = false) {
+  const ai = getGeminiClient();
+  const textLimit = 6000;
+
+  const contents = messages.map((m: any) => {
+    const rawText = m.text || m.content || '';
+    const text = rawText.length > textLimit ? rawText.substring(0, textLimit) + " ... [Pesan terpotong]" : rawText;
+    return {
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text }]
+    };
+  });
+
+  // Resilient model fallback priority: 3.7-flash -> 3.1-flash-lite -> 3.6-flash
+  const models = ['gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-3.6-flash'];
+  let lastErr: any = null;
+
+  for (const modelName of models) {
+    // Up to 2 attempts per model in case of temporary 503 spikes
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const config: any = {
+          temperature: 0.7
+        };
+        if (systemInstruction && systemInstruction.trim()) {
+          config.systemInstruction = systemInstruction;
+        }
+        if (jsonMode) {
+          config.responseMimeType = 'application/json';
+        }
+
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config
+        });
+        if (response.text) {
+          return response.text;
+        }
+      } catch (gErr: any) {
+        lastErr = gErr;
+        const errMsg = gErr.message || String(gErr);
+        const is503 = errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
+        console.warn(`[Gemini Fallback Model ${modelName} - Attempt ${attempt + 1} Error]:`, errMsg);
+        
+        if (is503 && attempt === 0) {
+          // Brief pause before trying next attempt or next model
+          await new Promise(r => setTimeout(r, 600));
+          continue;
+        }
+        // If not recoverable on same model, break inner loop to try next model
+        break;
+      }
+    }
   }
 
-  return replyText;
+  throw lastErr || new Error("Gagal mendapatkan respon dari Gemini AI.");
+}
+
+// Unified call function with timeout (lemot detection) & automatic fallback to Gemini
+async function callAIWithFallback(
+  modelName: string, 
+  systemInstruction: string, 
+  messages: any[], 
+  options: { jsonMode?: boolean; timeoutMs?: number } = {}
+) {
+  const { jsonMode = false, timeoutMs = 15000 } = options;
+  const dsKey = getDeepSeekKey();
+
+  // If DeepSeek Key is provided, attempt DeepSeek first
+  if (dsKey) {
+    let deepseekTimer: any = null;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        deepseekTimer = setTimeout(() => {
+          reject(new Error("TIMEOUT_DEEPSEEK"));
+        }, timeoutMs);
+      });
+
+      const reply = await Promise.race([
+        callDeepSeek(modelName, systemInstruction, messages),
+        timeoutPromise
+      ]) as string;
+
+      return reply;
+    } catch (err: any) {
+      const isSlow = err.message === "TIMEOUT_DEEPSEEK";
+      console.warn(`[AI Engine] Catalyst / DeepSeek ${isSlow ? `lambat (>${timeoutMs/1000}s)` : 'mengalami kendala'} (${err.message}). Otomatis beralih ke Gemini...`);
+
+      // Attempt Gemini fallback
+      try {
+        const geminiReply = await callGemini(systemInstruction, messages, jsonMode);
+        return geminiReply;
+      } catch (gErr: any) {
+        console.error('[AI Engine] Fallback ke Gemini juga gagal:', gErr.message || gErr);
+        // Return original error if Gemini also failed
+        throw err;
+      }
+    } finally {
+      if (deepseekTimer) clearTimeout(deepseekTimer);
+    }
+  } else {
+    // If no DeepSeek Key configured, directly use Gemini
+    return await callGemini(systemInstruction, messages, jsonMode);
+  }
 }
 
 app.use(express.json());
@@ -294,21 +444,14 @@ app.use('/api', (req, res, next) => {
   // Auto Paham Chat API
   app.post(['/api/study-companion/chat', '/study-companion/chat'], async (req: any, res: any) => {
     try {
-      const { messages, knowledgeContext, model = 'deepseek-chat' } = req.body;
+      const { messages, knowledgeContext, model = 'deepseek-v4-flash' } = req.body;
       if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ error: 'Messages array is required', status: 'error' });
       }
 
-      const requestedModel = model || 'deepseek-chat';
+      const requestedModel = model || 'deepseek-v4-flash';
       const hasDeepSeekKey = !!getDeepSeekKey();
       const hasGeminiKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
-
-      if (!hasDeepSeekKey && !hasGeminiKey) {
-        return res.status(400).json({
-          status: 'error',
-          error: '⚠️ API Key AI belum dikonfigurasi. Silakan tambahkan variabel DEEPSEEK_API_KEY atau GEMINI_API_KEY di Environment Variables Vercel/Hosting Anda.'
-        });
-      }
 
       // 🧠 Define System Instruction / Character Bible
       const systemInstruction = `Anda adalah "THE CATALYST" (Character Bible v1.0) — sebuah manifestasi dari satu keyakinan mutlak: "Setiap manusia memiliki potensi intelektual yang jauh lebih besar daripada yang mereka kira."
@@ -384,38 +527,7 @@ Target Anda bukan agar mereka berkata "AI ini jawabannya lengkap", melainkan aga
 
       let replyText = '';
 
-      // Check if we should call DeepSeek
-      if (requestedModel.startsWith('deepseek-') && hasDeepSeekKey) {
-        replyText = await callDeepSeek(requestedModel, systemInstructionWithContext, messages);
-      } else if (hasGeminiKey) {
-        // Use Gemini (Google GenAI)
-        const ai = getGeminiClient();
-        const textLimit = 6000;
-        const contents = messages.map((m: any) => {
-          const text = m.text && m.text.length > textLimit 
-            ? m.text.substring(0, textLimit) + " ... [Pesan terpotong]" 
-            : (m.text || '');
-          return {
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text }]
-          };
-        });
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents,
-          config: {
-            systemInstruction: systemInstructionWithContext,
-            temperature: 0.7
-          }
-        });
-        replyText = response.text || '';
-      } else if (hasDeepSeekKey) {
-        // Fallback to DeepSeek if no Gemini key
-        replyText = await callDeepSeek('deepseek-chat', systemInstructionWithContext, messages);
-      } else {
-        throw new Error("Tidak ada API key yang aktif.");
-      }
+      replyText = await callAIWithFallback('deepseek-v4-flash', systemInstructionWithContext, messages, { timeoutMs: 15000 });
 
       return res.json({ text: replyText, status: 'success' });
 
@@ -432,15 +544,6 @@ Target Anda bukan agar mereka berkata "AI ini jawabannya lengkap", melainkan aga
   app.post(['/api/skripsi-bypass/generate-title', '/skripsi-bypass/generate-title'], async (req: any, res: any) => {
     try {
       const { keyword } = req.body;
-      const hasDeepSeekKey = !!getDeepSeekKey();
-      const hasGeminiKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
-
-      if (!hasDeepSeekKey && !hasGeminiKey) {
-        return res.status(400).json({
-          status: 'error',
-          error: '⚠️ Fitur AI Skripsi Bypass belum aktif karena DEEPSEEK_API_KEY atau GEMINI_API_KEY belum dikonfigurasi di server.'
-        });
-      }
 
       const prompt = `Generate a highly sophisticated, humorous, and hyper-academic title for an International Relations undergraduate thesis (Shinta 2 journal standard) in Indonesian. It should sound extremely complex, using big academic buzzwords (e.g., 'Dinamika', 'Konstelasi', 'Dekonstruksi', 'Hegemoni', 'Negosiasi', 'Paradoks', 'Sekuritisasi', 'Ambiguitas') but also contain a subtle humorous undertone or be slightly absurd (yet sound 100% real to a professor). 
 ${keyword ? `Integrate this keyword/topic: "${keyword}".` : ""}
@@ -453,23 +556,9 @@ Also generate:
 
 Format the output strictly as a JSON object with these keys: "title", "abstract", "introduction", "theories", "findings", "grade", "notes". Do not wrap in markdown or code blocks.`;
 
-      let data: any = {};
-      if (hasDeepSeekKey) {
-        const rawReply = await callDeepSeek('deepseek-chat', 'You are a helpful JSON generator. Output valid JSON only without markdown backticks.', [{ role: 'user', text: prompt }]);
-        const cleanJson = rawReply.replace(/```json/g, '').replace(/```/g, '').trim();
-        data = JSON.parse(cleanJson);
-      } else {
-        const ai = getGeminiClient();
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.8
-          }
-        });
-        data = JSON.parse(response.text || '{}');
-      }
+      const rawReply = await callAIWithFallback('deepseek-v4-flash', 'You are a helpful JSON generator. Output valid JSON only without markdown backticks.', [{ role: 'user', text: prompt }], { jsonMode: true, timeoutMs: 15000 });
+      const cleanJson = rawReply.replace(/```json/g, '').replace(/```/g, '').trim();
+      const data = JSON.parse(cleanJson);
 
       return res.json({ data, status: 'success' });
     } catch (error: any) {
@@ -582,6 +671,7 @@ async function startServer() {
 
   // Vite integration
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
