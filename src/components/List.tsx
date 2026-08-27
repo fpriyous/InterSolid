@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Download, Table, Lock, Unlock, Check, X, ArrowRight } from 'lucide-react';
+import { Plus, Trash2, Download, Table, Lock, Unlock, Check, X, ArrowRight, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { 
@@ -52,7 +52,9 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   const [newTableName, setNewTableName] = useState('');
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnLabel, setNewColumnLabel] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState<{ type: 'table' | 'row', id?: string } | null>(null);
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const [editingColumnLabel, setEditingColumnLabel] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'table' | 'row' | 'col', id?: string; label?: string } | null>(null);
 
   // Sync Tables list
   useEffect(() => {
@@ -166,15 +168,19 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
   };
 
   const deleteTable = async () => {
-    if (!isAdmin) {
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) {
       (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
       return;
     }
     if (!activeTableId) return;
     
     setLoading(true);
     try {
-      console.log("Nuclear deleting table:", activeTableId);
       // Deleting subcollections first (Rows & Cols)
       const batch = writeBatch(db);
       
@@ -205,6 +211,10 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       (window as any).showAuthError?.('unauthorized');
       return;
     }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
     
     try {
       await deleteDoc(doc(db, 'absenTables', activeTableId, 'rows', rowId));
@@ -213,6 +223,66 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
       console.error("Delete row error:", e);
       (window as any).showAppAlert?.('Delete Failed', 'Failed to delete row data: ' + e.message, 'error');
       setConfirmDelete(null);
+    }
+  };
+
+  const deleteColumn = async (colId: string) => {
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
+    
+    try {
+      // Delete column doc
+      await deleteDoc(doc(db, 'absenTables', activeTableId, 'cols', colId));
+      
+      // Clean up checks in all rows
+      const rowsSnap = await getDocs(collection(db, 'absenTables', activeTableId, 'rows'));
+      const batch = writeBatch(db);
+      rowsSnap.forEach(rDoc => {
+        const rowData = rDoc.data();
+        if (rowData.checks && rowData.checks[colId] !== undefined) {
+          const newChecks = { ...rowData.checks };
+          delete newChecks[colId];
+          batch.update(rDoc.ref, { checks: newChecks });
+        }
+      });
+      await batch.commit();
+
+      setConfirmDelete(null);
+    } catch (e: any) {
+      console.error("Delete column error:", e);
+      (window as any).showAppAlert?.('Delete Failed', 'Failed to delete column: ' + e.message, 'error');
+      setConfirmDelete(null);
+    }
+  };
+
+  const updateColumn = async (colId: string) => {
+    const table = tables.find(t => t.id === activeTableId);
+    if (table?.isLocked && !isAdmin) {
+      (window as any).showAuthError?.('unauthorized');
+      return;
+    }
+    if (!user) {
+      (window as any).showAuthError?.('unauthenticated');
+      return;
+    }
+    if (!editingColumnLabel.trim()) return;
+
+    try {
+      await updateDoc(doc(db, 'absenTables', activeTableId, 'cols', colId), {
+        label: editingColumnLabel.trim()
+      });
+      setEditingColumnId(null);
+      setEditingColumnLabel('');
+    } catch (e: any) {
+      console.error("Update column error:", e);
+      (window as any).showAppAlert?.('Update Failed', 'Failed to update column name: ' + e.message, 'error');
     }
   };
 
@@ -401,7 +471,7 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
           </div>
         </div>
 
-        {activeTableId && isAdmin && (
+        {activeTableId && (isAdmin || !activeTable?.isLocked) && (
           <button 
             onClick={() => setConfirmDelete({ type: 'table' })}
             className="px-6 py-3 bg-white dark:bg-red-900/20 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors border border-red-50 dark:border-red-900/10"
@@ -510,9 +580,64 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                   <th className="sticky left-0 z-20 bg-blue-50 dark:bg-blue-950 px-4 md:px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 w-12 md:w-16">#</th>
                   <th className="sticky left-12 md:left-16 z-20 bg-blue-50 dark:bg-blue-950 px-4 md:px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 min-w-[150px] md:min-w-[200px]">Nama Anggota</th>
                   {cols.map(col => (
-                    <th key={col.id} className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-center min-w-[80px]">{col.label}</th>
+                    <th key={col.id} className="px-4 md:px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-400 text-center min-w-[120px] group/colhead">
+                      {editingColumnId === col.id ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <input 
+                            type="text"
+                            value={editingColumnLabel}
+                            onChange={e => setEditingColumnLabel(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') updateColumn(col.id);
+                              if (e.key === 'Escape') setEditingColumnId(null);
+                            }}
+                            className="px-2 py-1 text-[10px] font-bold rounded border border-blue-400 bg-white dark:bg-gray-900 text-slate-800 dark:text-white outline-none w-24 text-center"
+                            autoFocus
+                          />
+                          <button 
+                            onClick={() => updateColumn(col.id)} 
+                            className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded"
+                            title="Simpan"
+                          >
+                            <Check size={12} strokeWidth={3} />
+                          </button>
+                          <button 
+                            onClick={() => setEditingColumnId(null)} 
+                            className="p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                            title="Batal"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="truncate">{col.label}</span>
+                          {(isAdmin || !activeTable?.isLocked) && (
+                            <div className="opacity-0 group-hover/colhead:opacity-100 flex items-center gap-0.5 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingColumnId(col.id);
+                                  setEditingColumnLabel(col.label);
+                                }}
+                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                                title="Edit Nama Kolom"
+                              >
+                                <Edit2 size={11} />
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete({ type: 'col', id: col.id, label: col.label })}
+                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+                                title="Hapus Kolom"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </th>
                   ))}
-                  {isAdmin && <th className="px-6 py-4 w-16"></th>}
+                  {(isAdmin || !activeTable?.isLocked) && <th className="px-4 md:px-6 py-4 w-16 text-center text-[10px] font-bold uppercase tracking-wider text-gray-400">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
@@ -539,11 +664,12 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                       </button>
                     </td>
                     ))}
-                    {isAdmin && (
-                      <td className="px-6 py-4 text-right">
+                    {(isAdmin || !activeTable?.isLocked) && (
+                      <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => setConfirmDelete({ type: 'row', id: row.id })}
-                          className="text-gray-200 hover:text-red-500 transition-colors"
+                          onClick={() => setConfirmDelete({ type: 'row', id: row.id, label: row.name })}
+                          className="text-gray-300 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                          title="Hapus Baris Anggota"
                         >
                           <Trash2 size={14}/>
                         </button>
@@ -690,7 +816,9 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
               <p className="text-xs text-gray-400 mb-8 font-medium uppercase tracking-widest leading-relaxed">
                 {confirmDelete.type === 'table' 
                   ? 'The entire table and all underlying records will be permanently deleted' 
-                  : 'This member row will be permanently deleted'}
+                  : confirmDelete.type === 'col'
+                  ? `Kolom "${confirmDelete.label || ''}" dan semua data centang di dalamnya akan dihapus permanen`
+                  : `Baris anggota "${confirmDelete.label || ''}" akan dihapus permanen`}
               </p>
               
               <div className="grid grid-cols-2 gap-3">
@@ -703,7 +831,8 @@ export default function List({ isAdmin, user }: { isAdmin: boolean, user: User |
                 <button 
                   onClick={() => {
                     if (confirmDelete.type === 'table') deleteTable();
-                    else if (confirmDelete.id) deleteRow(confirmDelete.id);
+                    else if (confirmDelete.type === 'col' && confirmDelete.id) deleteColumn(confirmDelete.id);
+                    else if (confirmDelete.type === 'row' && confirmDelete.id) deleteRow(confirmDelete.id);
                   }}
                   className="py-3 bg-green-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-tighter hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
                 >

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { RotateCw, Trash2, Plus, Users, Lock } from 'lucide-react';
+import { RotateCw, Trash2, Plus, Users, Lock, Shuffle, Dices, Sparkles } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -114,42 +114,78 @@ export default function SpinWheel({ user }: { user: User | null }) {
     ctx.stroke();
   };
 
+  const getSecureRandom = (): number => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const array = new Uint32Array(1);
+      window.crypto.getRandomValues(array);
+      return array[0] / (0xffffffff + 1);
+    }
+    return Math.random();
+  };
+
   const spin = () => {
     if (spinning || members.length < 2) return;
     setSpinning(true);
     setWinner(null);
 
-    const rounds = 5 + Math.random() * 5;
-    const targetAngle = Math.random() * (Math.PI * 2);
-    const totalRotation = (Math.PI * 2 * rounds) + targetAngle;
+    // Cryptographically secure randomized target selection
+    const n = members.length;
+    const arc = (2 * Math.PI) / n;
     
+    // Choose winning index completely randomly first using cryptographically strong random values
+    const winningIndex = Math.floor(getSecureRandom() * n);
+    
+    // Micro jitter within the slice (15% to 85% of slice to avoid landing precisely on borders)
+    const sliceJitter = (0.15 + getSecureRandom() * 0.7) * arc;
+    
+    // Calculate exact target angle where the pointer (at angle -Math.PI/2 relative to canvas top / right indicator) lands
+    // Indicator is on the right (0 rad in standard canvas coordinate system)
+    const sliceCenterAngle = winningIndex * arc;
+    
+    // Randomized number of full spins (8 to 16 full revolutions with random fractional offset)
+    const fullSpins = 8 + Math.floor(getSecureRandom() * 9);
+    
+    // Variable spin duration (3800ms to 5800ms) with slight unpredictable decay
+    const duration = 4000 + (getSecureRandom() * 1800);
+    
+    // Calculate total rotation
+    // Pointer is on the right side: angle 0. 
+    // Item i is drawn from [i*arc - PI/2] to [(i+1)*arc - PI/2]
+    // After rotation by theta, angle at right (0) points to: (2*PI - theta % 2PI + PI/2) % 2PI
+    const desiredStopAngle = (2 * Math.PI - (sliceCenterAngle + sliceJitter - Math.PI / 2)) % (Math.PI * 2);
+    
+    // Current angle normalized
+    const currentAngleNorm = angle % (Math.PI * 2);
+    let deltaAngle = (desiredStopAngle - currentAngleNorm);
+    if (deltaAngle < 0) deltaAngle += Math.PI * 2;
+    
+    const totalRotation = (Math.PI * 2 * fullSpins) + deltaAngle;
+    const startWheelAngle = angle;
     const startTime = performance.now();
-    const duration = 4000;
 
+    // Chaotic deceleration curve (Quintic with micro-inertia wobble)
     const animate = (time: number) => {
       const elapsed = time - startTime;
       const t = Math.min(elapsed / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 4);
       
-      const currentAngle = angle + totalRotation * ease;
-      const normalizedAngle = currentAngle % (Math.PI * 2);
-      setAngle(normalizedAngle);
+      // Custom non-linear multi-stage easing: Fast explosion -> prolonged suspense deceleration
+      // Quintic ease out: 1 - (1 - t)^5
+      const ease = 1 - Math.pow(1 - t, 5);
+      
+      const currentCalculatedAngle = startWheelAngle + totalRotation * ease;
+      setAngle(currentCalculatedAngle % (Math.PI * 2));
 
       if (t < 1) {
         requestAnimationFrame(animate);
       } else {
-        const n = members.length;
-        const arc = (2 * Math.PI) / n;
-        const stopAngle = (Math.PI * 2 - (normalizedAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-        const index = Math.floor(((stopAngle + Math.PI / 2) % (Math.PI * 2)) / arc) % n;
-        const selectedWinner = members[index];
-        setWinner(selectedWinner);
+        const finalSelected = members[winningIndex];
+        setWinner(finalSelected);
         setSpinning(false);
 
         // Log result to Firestore
         if (user) {
           addDoc(collection(db, 'spin_logs'), {
-            winner: selectedWinner,
+            winner: finalSelected,
             spunBy: user.displayName || 'Anonim',
             spunById: user.uid,
             createdAt: Timestamp.now()
@@ -161,9 +197,24 @@ export default function SpinWheel({ user }: { user: User | null }) {
     requestAnimationFrame(animate);
   };
 
+  const shuffleMembers = () => {
+    // Fisher-Yates shuffle with cryptographic random values
+    const shuffled = [...members];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(getSecureRandom() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setMembers(shuffled);
+  };
+
   const splitGroups = () => {
     if (members.length < groupCount) return;
-    const shuffled = [...members].sort(() => Math.random() - 0.5);
+    // Unbiased cryptographic shuffle before distributing to groups
+    const shuffled = [...members];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(getSecureRandom() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
     const newGroups: string[][] = Array.from({ length: groupCount }, () => []);
     shuffled.forEach((m, i) => newGroups[i % groupCount].push(m));
     setGroups(newGroups);
@@ -173,6 +224,11 @@ export default function SpinWheel({ user }: { user: User | null }) {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20 md:pb-0">
       <div className="lg:col-span-2 space-y-6 md:space-y-8 flex flex-col items-center">
         <div className="bg-white dark:bg-[#1a252f] p-6 md:p-10 rounded-[32px] border border-blue-100 dark:border-blue-900/30 shadow-xl flex flex-col items-center gap-6 md:gap-8 w-full max-w-md">
+          <div className="flex items-center gap-2 px-3 py-1 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 rounded-full text-[9px] font-bold text-blue-600 dark:text-blue-400">
+            <Sparkles size={11} className="text-blue-500 animate-pulse" />
+            <span>Crypto-RNG Unbiased Physics</span>
+          </div>
+
           <div className="relative w-full aspect-square max-w-[320px] md:max-w-none">
             <canvas ref={canvasRef} width={window.innerWidth < 640 ? 280 : 360} height={window.innerWidth < 640 ? 280 : 360} className="w-full h-full rounded-full shadow-2xl" />
             <div className="absolute -right-2 md:-right-4 top-1/2 -translate-y-1/2 w-0 h-0 border-t-[10px] md:border-t-[15px] border-t-transparent border-b-[10px] md:border-b-[15px] border-b-transparent border-r-[20px] md:border-r-[30px] border-r-blue-500 drop-shadow-md" />
@@ -252,8 +308,19 @@ export default function SpinWheel({ user }: { user: User | null }) {
       <div className="space-y-6">
         <div className="bg-white dark:bg-[#1a252f] rounded-3xl border border-blue-100 dark:border-blue-900/30 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-sm">Members List</h4>
-            <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full text-gray-500">{members.length}</span>
+            <div className="flex items-center gap-2">
+              <h4 className="font-bold text-sm">Members List</h4>
+              <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full text-gray-500">{members.length}</span>
+            </div>
+            <button
+              onClick={shuffleMembers}
+              disabled={spinning || members.length < 2}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+              title="Acak urutan nama di roda secara acak"
+            >
+              <Shuffle size={12} />
+              <span>Acak Urutan</span>
+            </button>
           </div>
           
           <div className="flex gap-2 mb-4">

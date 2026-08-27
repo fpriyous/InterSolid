@@ -45,6 +45,7 @@ import SplashCursor from './components/SplashCursor';
 import FadeContent from './components/FadeContent';
 import FocusText from './components/FocusText';
 import GodMode from './components/GodMode';
+import AIBypassChat from './components/AIBypassChat';
 
 // Lazy Load Feature Components
 const Kalender = lazy(() => import('./components/Kalender'));
@@ -925,6 +926,16 @@ export default function App() {
       </AnimatePresence>
       
       <GodMode isOpen={showGodMode} onClose={() => setShowGodMode(false)} />
+
+      {/* Floating AI Bypass Action Copilot */}
+      <AIBypassChat 
+        user={user}
+        isAdmin={effectiveAdmin}
+        isDewa={isDewa}
+        activePage={activePage}
+        setActivePage={navigateToPage}
+        onOpenAdminModal={() => setShowPinModal(true)}
+      />
 
       {/* Global Background Features */}
       <Suspense fallback={null}>

@@ -581,6 +581,178 @@ Format the output strictly as a JSON object with these keys: "title", "abstract"
     }
   });
 
+  // AI Bypass Copilot Endpoint
+  app.post(['/api/ai-bypass/chat', '/ai-bypass/chat'], async (req: any, res: any) => {
+    try {
+      const { 
+        messages, 
+        userContext = {}, 
+        currentDateTime = new Date().toISOString(),
+        platformDataSummary = null
+      } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: 'Messages array is required', status: 'error' });
+      }
+
+      const today = new Date(currentDateTime);
+      const daysOfWeek = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const currentDayName = daysOfWeek[today.getDay()];
+      const currentDateFormatted = today.toISOString().split('T')[0];
+      const currentTimeFormatted = today.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+      const userName = userContext.userName || 'Mahasiswa';
+      const userRole = userContext.isDewa ? 'Dewa/Owner (Akses Tertinggi)' : userContext.isAdmin ? 'Admin Kelas' : 'Mahasiswa Kelas';
+      const isLoggedIn = !!userContext.isLoggedIn;
+
+      const systemInstruction = `Anda adalah "InterBypass AI" — Copilot & Intelligent Action Agent resmi untuk portal kelas InterSolid (Hubungan Internasional).
+Keberadaan Anda adalah untuk menjadi "BYPASS" serba bisa: saat pengguna memberikan perintah lewat obrolan teks, Anda langsung menganalisis instruksi tersebut, menentukan aksi fitur yang tepat di platform, dan menghasilkan structured actions agar sistem mengeksekusinya secara otomatis ke database Firestore dan UI platform.
+
+KONTEKS WAKTU & PENGGUNA SAAT INI:
+- Waktu Sekarang: Hari ${currentDayName}, Tanggal ${currentDateFormatted} (Tahun ${today.getFullYear()}), Pukul ${currentTimeFormatted} WIB.
+- Nama Pengguna: ${userName}
+- Status Login: ${isLoggedIn ? 'Sudah Login' : 'Belum Login (Guest)'}
+- Wewenang Pengguna: ${userRole} (Admin: ${userContext.isAdmin || userContext.isDewa ? 'YA' : 'TIDAK'})
+
+${platformDataSummary ? `DATA AKTIF DI PLATFORM SAAT INI:\n${JSON.stringify(platformDataSummary, null, 2)}\n` : ''}
+
+DAFTAR FITUR & STRUKTUR AKSI YANG DIDUKUNG:
+
+1. KALENDER & JADWAL KELAS (type: "create_event"):
+   - Parameter payload:
+     * title: string (Judul jadwal/tugas/ujian/kegiatan)
+     * genre: "tugas" | "uts" | "event" | "libur" | "materi" | "memory" | "lainnya" (Pilih yang paling sesuai)
+     * date: string format YYYY-MM-DD (Wajib dihitung akurat berdasarkan tanggal hari ini ${currentDateFormatted}. Misalnya jika user bilang "besok", "Senin depan", "tgl 15", hitung ke YYYY-MM-DD yang benar)
+     * time: string (misal: "08:00 - 10:00 WIB" atau "13:30" atau "Sepanjang Hari")
+     * note: string (Keterangan/catatan tambahan, ruang kelas, link, dsb.)
+   - requiresAuth: true, requiresAdmin: false
+   - suggestedNavigation: "kalender"
+
+2. PENGUMUMAN KELAS (type: "create_announcement"):
+   - Parameter payload:
+     * title: string (Judul pengumuman)
+     * content: string (Isi lengkap pengumuman)
+     * priority: "low" | "medium" | "high" (Default medium, jika penting/deadline gunakan high)
+   - requiresAuth: true, requiresAdmin: true (Hanya admin/pengurus yang bisa mempublikasikan pengumuman resmi)
+   - suggestedNavigation: "pengumuman"
+
+3. NOTULENSI & CATATAN MATERI (type: "create_note"):
+   - Parameter payload:
+     * title: string (Judul notulensi rapat atau materi kuliah)
+     * content: string (Rangkuman teks polos)
+     * htmlContent: string (Format HTML rapi dengan <h3>, <p>, <ul>, <li> jika ada poin-poin)
+     * tag: string (misal: "Rapat", "Kuliah", "Proker", "Evaluasi", "Akademik", "Umum")
+     * date: string (misal: "${currentDateFormatted}")
+   - requiresAuth: true, requiresAdmin: false
+   - suggestedNavigation: "notulensi"
+
+4. POLLING & VOTING KELAS (type: "create_poll"):
+   - Parameter payload:
+     * question: string (Pertanyaan voting)
+     * options: string[] (Minimal 2 opsi pilihan, misal: ["Setuju", "Tidak Setuju"] atau daftar lokasi)
+   - requiresAuth: true, requiresAdmin: false
+   - suggestedNavigation: "voting"
+
+5. ASPIRASI ANONIM / YAPPING (type: "create_aspirasi"):
+   - Parameter payload:
+     * text: string (Pesan aspirasi/unek-unek/saran anonim)
+     * sticker: string (Pilihan: "🔥", "👍", "❤️", "🙌", "😂", "✨", "vector_rocket", "vector_heart", "vector_coffee", "vector_party", "vector_fire", "vector_neko", "vector_ghost")
+   - requiresAuth: true, requiresAdmin: false
+   - suggestedNavigation: "aspirasi"
+
+6. TABEL ABSENSI / KAS DIGITAL (type: "create_absen_table"):
+   - Parameter payload:
+     * name: string (Nama tabel, misal: "Absensi Rapat Perdana", "Uang Kas Semester 4")
+   - requiresAuth: true, requiresAdmin: false
+   - suggestedNavigation: "absen"
+
+7. NAVIGASI LANGSUNG (type: "navigate_to"):
+   - Parameter payload:
+     * page: "home" | "kalender" | "absen" | "spin" | "voting" | "notulensi" | "aspirasi" | "memory" | "pengumuman" | "study" | "profiles" | "interlingo"
+   - requiresAuth: false, requiresAdmin: false
+   - suggestedNavigation: nama halaman yang dituju
+
+8. SPIN WHEEL / UNDIAN ANGGOTA KELAS (type: "spin_wheel"):
+   - Parameter payload: {}
+   - requiresAuth: false, requiresAdmin: false
+   - suggestedNavigation: "spin"
+
+ATURAN WEWENANG (PERMISSIONS) & TEMPLATE PANDUAN:
+- Jika pengguna meminta format/template atau menanyakan cara memerintahkan (misal "minta template jadwal", "bagaimana format bikin voting?"), berikan template panduan yang sangat jelas dengan format tag [Kategori] dan parameter yang terpisah rapi.
+- Jika pengguna meminta aksi yang memerlukan Admin (misal create_announcement) namun pengguna BUKAN admin, masukkan tetap action tersebut dengan requiresAdmin: true, dan jelaskan di 'reply' dengan sopan bahwa fitur pengumuman publik memerlukan hak akses Admin/Pengurus kelas dan sistem akan meminta PIN Admin jika disetujui.
+- Jika pengguna belum login, beri tahu bahwa aksi akan dijalankan setelah login Google sekali klik.
+- Jika pengguna hanya bertanya (misal "siapa saja pengurus kelas?", "apa materi HI besok?", "ada tugas apa?"), jawab dengan informatif dan ramah tanpa perlu membuat action yang tidak diminta.
+
+FORMAT KELUARAN (STRICT JSON ONLY):
+Wajib menghasilkan output format JSON murni tanpa pembungkus markdown code block:
+{
+  "reply": "Penjelasan responsif, asyik, dan ramah dalam bahasa Indonesia mengenai apa yang telah diproses atau jawaban dari pertanyaan. Jika memberikan template, berikan contoh konkret.",
+  "actions": [
+    {
+      "type": "create_event",
+      "title": "Jadwal Baru: Ujian Teori HI",
+      "description": "27 Agustus 2026 pukul 08:00 WIB di Ruang B304",
+      "requiresAdmin": false,
+      "requiresAuth": true,
+      "payload": {
+        "title": "Ujian Teori Hubungan Internasional",
+        "genre": "uts",
+        "date": "2026-08-27",
+        "time": "08:00 - 10:00 WIB",
+        "note": "Ruang B304, materi bab 1-5"
+      }
+    }
+  ],
+  "suggestedNavigation": "kalender",
+  "templateCode": "[Jadwal]\nJudul: Ujian Akhir Semester\nTanggal: 2026-08-28\nJam: 08:00 - 10:00 WIB\nKategori: uts\nKeterangan: Ruang B304",
+  "quickSuggestions": [
+    "Lihat jadwal di Kalender",
+    "Bikin pengumuman terkait ujian ini",
+    "Lihat Template Perintah"
+  ]
+}`;
+
+      // Convert messages to role/text objects
+      const formattedMessages = messages.map((m: any) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        text: m.text || m.content || ''
+      }));
+
+      const rawReply = await callAIWithFallback(
+        'deepseek-v4-flash',
+        systemInstruction,
+        formattedMessages,
+        { jsonMode: true, timeoutMs: 15000 }
+      );
+
+      let parsedData: any = null;
+      try {
+        const cleanJson = rawReply.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsedData = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.warn('[AI Bypass Parse Warning]: JSON parse error, building fallback reply', parseErr);
+        parsedData = {
+          reply: rawReply.replace(/```json/g, '').replace(/```/g, '').trim(),
+          actions: [],
+          suggestedNavigation: null,
+          quickSuggestions: ["Buatkan jadwal tugas", "Bikinin pengumuman", "Buat polling baru"]
+        };
+      }
+
+      return res.json({
+        data: parsedData,
+        status: 'success'
+      });
+
+    } catch (error: any) {
+      console.error('[AI Bypass Error]:', error);
+      return res.status(500).json({
+        error: error.message || 'Terjadi kesalahan saat memproses perintah AI Bypass.',
+        status: 'error'
+      });
+    }
+  });
+
   // Health check API
   app.get(['/api/health', '/health'], (req, res) => {
     res.json({ status: 'ok' });
