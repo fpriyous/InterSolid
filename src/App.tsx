@@ -23,6 +23,7 @@ import {
   Image as ImageIcon,
   Loader2,
   Sparkles,
+  Bot,
   Video,
   Trophy
 } from 'lucide-react';
@@ -73,6 +74,7 @@ interface MenuItem {
 
 const PRIMARY_MENU_ITEMS: MenuItem[] = [
   { id: 'home', label: 'Dashboard', icon: LayoutGrid, description: 'Monitor class activities and analytics in real-time.' },
+  { id: 'bypass', label: 'Bypass AI', icon: Bot, description: 'Asisten eksekusi jadwal, voting, pengumuman, dan notulensi otomatis.' },
   { id: 'kalender', label: 'Calendar', icon: Calendar, description: 'Manage and coordinate class schedules.' },
   { id: 'study', label: 'Auto Paham', icon: Sparkles, description: 'Consult with our dedicated AI Hubungan Internasional tutor.' },
   { id: 'notulensi', label: 'Notes', icon: FileText, description: 'Record minutes of meetings and class notes.' },
@@ -102,6 +104,11 @@ export default function App() {
   const [isMoreDropdownOpen, setIsMoreDropdownOpen] = useState(false);
 
   const navigateToPage = (page: string, id: string | null = null) => {
+    if (page === 'bypass') {
+      setIsAIBypassOpen(true);
+      setIsMoreDropdownOpen(false);
+      return;
+    }
     setActivePage(page);
     setTargetId(id);
     setIsMoreDropdownOpen(false);
@@ -137,6 +144,7 @@ export default function App() {
   // God Mode Secret Trigger States
   const [logoClicks, setLogoClicks] = useState(0);
   const [showGodMode, setShowGodMode] = useState(false);
+  const [isAIBypassOpen, setIsAIBypassOpen] = useState(false);
 
   useEffect(() => {
     (window as any).showAuthError = (type: 'unauthenticated' | 'unauthorized') => {
@@ -423,6 +431,17 @@ export default function App() {
               </AnimatePresence>
             </div>
 
+            {/* Quick Bypass AI Header Button */}
+            <button
+              onClick={() => setIsAIBypassOpen(true)}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-sm transition-all active:scale-95 mr-1"
+              title="Buka AI Bypass Copilot"
+            >
+              <Bot size={14} className="animate-bounce" />
+              <span>Bypass AI</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+            </button>
+
             <div className="h-5 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
             
             <button 
@@ -476,6 +495,13 @@ export default function App() {
 
           {/* User Avatar on Mobile */}
           <div className="md:hidden flex items-center gap-2">
+            <button
+              onClick={() => setIsAIBypassOpen(true)}
+              className="p-2 rounded-lg bg-blue-600 text-white shadow-sm flex items-center justify-center active:scale-95"
+              title="Buka InterBypass AI"
+            >
+              <Bot size={18} />
+            </button>
             {user && (
               <img 
                 src={user.photoURL || ''} 
@@ -935,6 +961,8 @@ export default function App() {
         activePage={activePage}
         setActivePage={navigateToPage}
         onOpenAdminModal={() => setShowPinModal(true)}
+        isOpenControlled={isAIBypassOpen}
+        setIsOpenControlled={setIsAIBypassOpen}
       />
 
       {/* Global Background Features */}

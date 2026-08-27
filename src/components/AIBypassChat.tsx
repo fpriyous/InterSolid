@@ -28,7 +28,8 @@ import {
   Edit3, 
   Compass, 
   HelpCircle, 
-  Layers
+  Layers,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
@@ -42,6 +43,8 @@ export interface AIBypassChatProps {
   activePage: string;
   setActivePage: (page: string, targetId?: string | null) => void;
   onOpenAdminModal?: () => void;
+  isOpenControlled?: boolean;
+  setIsOpenControlled?: (open: boolean) => void;
 }
 
 interface ActionPayload {
@@ -251,14 +254,27 @@ export default function AIBypassChat({
   isDewa,
   activePage,
   setActivePage,
-  onOpenAdminModal
+  onOpenAdminModal,
+  isOpenControlled,
+  setIsOpenControlled
 }: AIBypassChatProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = isOpenControlled !== undefined ? isOpenControlled : internalIsOpen;
+  const setIsOpen = (val: boolean) => {
+    if (setIsOpenControlled) {
+      setIsOpenControlled(val);
+    } else {
+      setInternalIsOpen(val);
+    }
+  };
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [activeGuidedTemplate, setActiveGuidedTemplate] = useState<PresetTemplate | null>(null);
   const [guidedFormValues, setGuidedFormValues] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [templateFilterCategory, setTemplateFilterCategory] = useState<string>('all');
+  const [templateSearchQuery, setTemplateSearchQuery] = useState<string>('');
 
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -308,6 +324,23 @@ export default function AIBypassChat({
   useEffect(() => {
     localStorage.setItem('IS_aiBypassMessages', JSON.stringify(messages.slice(-30)));
   }, [messages]);
+
+  // Keyboard shortcut: Escape to close drawer or modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        if (activeGuidedTemplate) {
+          setActiveGuidedTemplate(null);
+        } else if (showTemplates) {
+          setShowTemplates(false);
+        } else {
+          setIsOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, showTemplates, activeGuidedTemplate]);
 
   // Speech recognition setup
   useEffect(() => {
@@ -813,663 +846,754 @@ export default function AIBypassChat({
       {/* 💬 Floating Chat Window */}
       <AnimatePresence>
         {isOpen && (
-          <div 
-            id="ai-bypass-chat-modal"
-            className={`fixed z-[190] ${
-              isExpanded 
-                ? 'inset-3 md:inset-8' 
-                : 'bottom-4 right-4 md:bottom-7 md:right-7 w-[94vw] sm:w-[440px] md:w-[490px] h-[86vh] sm:h-[650px] max-h-[720px]'
-            } flex flex-col pointer-events-auto`}
-          >
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 30 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="flex-1 flex flex-col bg-white/95 dark:bg-[#0f172a]/95 backdrop-blur-2xl rounded-[28px] md:rounded-[32px] shadow-2xl border border-blue-100/60 dark:border-blue-900/40 overflow-hidden ring-1 ring-black/5 relative"
+          <>
+            {/* Backdrop overlay for mobile & expanded */}
+            <div 
+              className={`fixed inset-0 z-[185] bg-slate-950/40 backdrop-blur-[2px] transition-opacity ${isExpanded ? 'block' : 'sm:hidden block'}`}
+              onClick={() => setIsOpen(false)}
+            />
+
+            <div 
+              id="ai-bypass-chat-modal"
+              className={`fixed z-[190] ${
+                isExpanded 
+                  ? 'inset-2 sm:inset-5 md:inset-8' 
+                  : 'bottom-2 right-2 sm:bottom-4 sm:right-4 md:bottom-5 md:right-5 w-[calc(100vw-1rem)] sm:w-[450px] md:w-[480px] max-w-[calc(100vw-1rem)] h-[min(570px,calc(100dvh-4.5rem))] max-h-[calc(100dvh-3.5rem)]'
+              } flex flex-col pointer-events-auto`}
             >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 md:px-5 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white border-b border-white/10 shadow-sm select-none shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="w-9 h-9 md:w-10 md:h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner border border-white/20">
-                      <Bot size={20} className="text-white" />
-                    </div>
-                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-blue-700 rounded-full" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-sm md:text-base leading-tight">InterBypass AI</h3>
-                      <span className="px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-black uppercase tracking-wider">
-                        Copilot
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-blue-100 flex items-center gap-1">
-                        {isDewa ? (
-                          <span className="text-amber-300 font-bold flex items-center gap-0.5">
-                            <Sparkles size={10} /> Dewa Mode
-                          </span>
-                        ) : isAdmin ? (
-                          <span className="text-emerald-300 font-bold flex items-center gap-0.5">
-                            <ShieldCheck size={10} /> Admin Active
-                          </span>
-                        ) : user ? (
-                          <span className="text-blue-200">Mahasiswa</span>
-                        ) : (
-                          <span className="text-blue-300/80">Guest (Tamu)</span>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Header Controls */}
-                <div className="flex items-center gap-1">
-                  {/* Template Drawer Toggle */}
-                  <button
-                    onClick={() => {
-                      setShowTemplates(!showTemplates);
-                      setActiveGuidedTemplate(null);
-                    }}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                      showTemplates 
-                        ? 'bg-white text-blue-700 shadow-md' 
-                        : 'bg-white/15 text-white hover:bg-white/25'
-                    }`}
-                    title="Buka Format & Template Perintah"
-                  >
-                    <LayoutTemplate size={14} />
-                    <span className="hidden sm:inline">Template</span>
-                  </button>
-
-                  <button
-                    onClick={handleClearHistory}
-                    className="p-2 text-white/70 hover:text-white hover:bg-white/15 rounded-xl transition-all"
-                    title="Bersihkan Riwayat"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                  <button
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="hidden sm:flex p-2 text-white/70 hover:text-white hover:bg-white/15 rounded-xl transition-all"
-                    title={isExpanded ? 'Perkecil' : 'Perbesar'}
-                  >
-                    {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                  </button>
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-xl transition-all ml-0.5"
-                    title="Tutup"
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-              </div>
-
-              {/* 📋 Template Drawer Overlay */}
-              <AnimatePresence>
-                {showTemplates && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute inset-x-0 top-[57px] bottom-[68px] z-30 bg-white/98 dark:bg-[#0f172a]/98 backdrop-blur-xl flex flex-col overflow-hidden border-b border-slate-200 dark:border-slate-800"
-                  >
-                    <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border-b border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-blue-600 text-white rounded-lg">
-                          <LayoutTemplate size={15} />
-                        </div>
-                        <div>
-                          <h4 className="text-xs md:text-sm font-bold text-slate-800 dark:text-slate-100">
-                            Format & Template Siap Pakai
-                          </h4>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Pilih template agar data langsung tepat sasaran dan bebas salah paham.
-                          </p>
-                        </div>
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.92, y: 25 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: 25 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="flex-1 flex flex-col bg-white dark:bg-[#0f172a] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden ring-1 ring-black/10 relative"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white border-b border-white/10 shadow-sm select-none shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="relative shrink-0">
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner border border-white/20">
+                        <Bot size={18} className="text-white" />
                       </div>
-                      <button
-                        onClick={() => {
-                          setShowTemplates(false);
-                          setActiveGuidedTemplate(null);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-800"
-                      >
-                        <X size={16} />
-                      </button>
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-blue-700 rounded-full" />
                     </div>
-
-                    {/* Guided Form Mode */}
-                    {activeGuidedTemplate ? (
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-                          <div className="flex items-center gap-2">
-                            <div className={`p-1.5 rounded-lg bg-gradient-to-r ${activeGuidedTemplate.color} text-white`}>
-                              <activeGuidedTemplate.icon size={15} />
-                            </div>
-                            <div>
-                              <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                Form Cepat: {activeGuidedTemplate.title}
-                              </h5>
-                              <span className="text-[10px] text-slate-400">
-                                Isi kolom di bawah untuk langsung dieksekusi oleh AI
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setActiveGuidedTemplate(null)}
-                            className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline"
-                          >
-                            Kembali ke Daftar
-                          </button>
-                        </div>
-
-                        <div className="space-y-3">
-                          {activeGuidedTemplate.fields.map((f) => (
-                            <div key={f.key} className="space-y-1">
-                              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                                {f.label}
-                              </label>
-                              {f.type === 'textarea' ? (
-                                <textarea
-                                  value={guidedFormValues[f.key] || ''}
-                                  onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
-                                  placeholder={f.placeholder}
-                                  rows={3}
-                                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              ) : f.type === 'select' ? (
-                                <select
-                                  value={guidedFormValues[f.key] || f.options?.[0]}
-                                  onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
-                                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  {f.options?.map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={guidedFormValues[f.key] || ''}
-                                  onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
-                                  placeholder={f.placeholder}
-                                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800">
-                          <button
-                            type="button"
-                            onClick={() => setActiveGuidedTemplate(null)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                          >
-                            Batal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSubmitGuidedForm}
-                            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold shadow-md hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1.5"
-                          >
-                            <Sparkles size={13} />
-                            Jalankan Perintah AI
-                          </button>
-                        </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-bold text-xs sm:text-sm leading-tight truncate">InterBypass AI</h3>
+                        <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[8px] sm:text-[9px] font-black uppercase tracking-wider shrink-0">
+                          Copilot
+                        </span>
                       </div>
-                    ) : (
-                      /* Template Cards List */
-                      <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
-                        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-900 dark:text-blue-300 text-xs flex items-start gap-2">
-                          <HelpCircle size={15} className="text-blue-500 shrink-0 mt-0.5" />
-                          <p className="leading-relaxed text-[11px]">
-                            <strong>Tips Pintas:</strong> Kamu bisa klik <strong>"Isi Form Cepat"</strong> untuk mengetik data di kolom form khusus, atau klik <strong>"Salin Template"</strong> untuk menaruh format ke ruang ketik.
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2.5">
-                          {PRESET_TEMPLATES.map((tpl) => {
-                            const IconComponent = tpl.icon;
-                            const isCopied = copiedId === tpl.id;
-
-                            return (
-                              <div
-                                key={tpl.id}
-                                className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-sm hover:border-blue-400/60 transition-all space-y-2.5"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <div className={`w-8 h-8 rounded-xl bg-gradient-to-tr ${tpl.color} text-white flex items-center justify-center shrink-0 shadow-sm`}>
-                                      <IconComponent size={16} />
-                                    </div>
-                                    <div>
-                                      <h5 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
-                                        {tpl.title}
-                                      </h5>
-                                      <span className="text-[10px] text-slate-400">
-                                        {tpl.category}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                    tpl.requiresAdmin 
-                                      ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300/40' 
-                                      : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40'
-                                  }`}>
-                                    {tpl.badge}
-                                  </span>
-                                </div>
-
-                                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                                  {tpl.description}
-                                </p>
-
-                                {/* Template Code Preview */}
-                                <div className="bg-slate-100 dark:bg-[#151f32] p-2.5 rounded-xl text-[10px] font-mono text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-800 whitespace-pre-wrap select-all">
-                                  {tpl.rawTemplate}
-                                </div>
-
-                                {/* Template Buttons */}
-                                <div className="flex items-center justify-between gap-2 pt-1">
-                                  <button
-                                    onClick={() => handleCopyTemplate(tpl)}
-                                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1 transition-all"
-                                  >
-                                    {isCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                                    {isCopied ? 'Tersalin!' : 'Salin Format'}
-                                  </button>
-
-                                  <div className="flex items-center gap-1.5">
-                                    <button
-                                      onClick={() => handleInsertTemplateToInput(tpl)}
-                                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center gap-1 transition-all"
-                                      title="Masukkan ke kolom chat"
-                                    >
-                                      <Edit3 size={12} />
-                                      Tulis di Chat
-                                    </button>
-
-                                    {tpl.fields.length > 0 ? (
-                                      <button
-                                        onClick={() => handleStartGuidedForm(tpl)}
-                                        className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-[10px] font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1 transition-all"
-                                      >
-                                        <Sparkles size={12} />
-                                        Isi Form Cepat
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => {
-                                          setShowTemplates(false);
-                                          handleSendMessage(tpl.samplePrompt);
-                                        }}
-                                        className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-[10px] font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1 transition-all"
-                                      >
-                                        <Sparkles size={12} />
-                                        Eksekusi
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Chat Message List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                  >
-                    <div className="flex items-end gap-2 max-w-[88%]">
-                      {msg.role === 'assistant' && (
-                        <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shrink-0 mb-1 shadow-sm">
-                          <Bot size={15} />
-                        </div>
-                      )}
-
-                      <div
-                        className={`rounded-2xl px-4 py-3 text-xs md:text-sm leading-relaxed shadow-sm ${
-                          msg.role === 'user'
-                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-none'
-                            : 'bg-slate-100 dark:bg-[#1e293b] text-slate-800 dark:text-slate-100 rounded-bl-none border border-slate-200/60 dark:border-slate-700/60'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap font-sans">{msg.text}</p>
-
-                        {/* Template Code Suggestion from AI */}
-                        {msg.templateCode && (
-                          <div className="mt-3 p-3 rounded-xl bg-slate-900 text-slate-100 border border-slate-700 text-xs font-mono">
-                            <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-800 text-[10px] text-slate-400 font-sans">
-                              <span>📋 Rekomendasi Format Template</span>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(msg.templateCode || '');
-                                  setCopiedId(msg.id);
-                                  setTimeout(() => setCopiedId(null), 2000);
-                                }}
-                                className="text-blue-400 hover:text-blue-300 flex items-center gap-1 font-bold"
-                              >
-                                {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
-                                {copiedId === msg.id ? 'Tersalin' : 'Salin'}
-                              </button>
-                            </div>
-                            <pre className="whitespace-pre-wrap text-[11px] leading-relaxed select-all font-mono text-emerald-300">
-                              {msg.templateCode}
-                            </pre>
-                            <button
-                              onClick={() => {
-                                setInputMessage(msg.templateCode || '');
-                                inputRef.current?.focus();
-                              }}
-                              className="mt-2 w-full py-1 text-center bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold font-sans transition-all"
-                            >
-                              Gunakan Format Ini di Chat
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Executed Action Cards */}
-                        {msg.actions && msg.actions.length > 0 && (
-                          <div className="mt-3 space-y-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
-                            {msg.actions.map((action, idx) => (
-                              <div
-                                key={idx}
-                                className={`p-3 rounded-xl border text-xs ${
-                                  action.status === 'success'
-                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
-                                    : action.status === 'permission_denied'
-                                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-300'
-                                    : action.status === 'error'
-                                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-300'
-                                    : 'bg-blue-500/10 border-blue-500/30 text-blue-900 dark:text-blue-300'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2 mb-1.5">
-                                  <div className="flex items-center gap-1.5 font-bold">
-                                    {action.type === 'create_event' && <CalendarIcon size={14} className="text-blue-500" />}
-                                    {action.type === 'create_announcement' && <Bell size={14} className="text-amber-500" />}
-                                    {action.type === 'create_note' && <FileText size={14} className="text-purple-500" />}
-                                    {action.type === 'create_poll' && <Vote size={14} className="text-emerald-500" />}
-                                    {action.type === 'create_aspirasi' && <MessageSquare size={14} className="text-pink-500" />}
-                                    {action.type === 'create_absen_table' && <Table size={14} className="text-indigo-500" />}
-                                    {action.type === 'spin_wheel' && <RotateCw size={14} className="text-sky-500" />}
-                                    <span>{action.title || 'Aksi Otomatis'}</span>
-                                  </div>
-
-                                  {/* Status badge */}
-                                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    {action.status === 'success' && (
-                                      <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                                        <CheckCircle2 size={12} /> Berhasil
-                                      </span>
-                                    )}
-                                    {action.status === 'permission_denied' && (
-                                      <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                        <Lock size={12} /> Butuh Izin
-                                      </span>
-                                    )}
-                                    {action.status === 'error' && (
-                                      <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                                        <ShieldAlert size={12} /> Gagal
-                                      </span>
-                                    )}
-                                    {action.status === 'executing' && (
-                                      <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                                        <Loader2 size={12} className="animate-spin" /> Menjalankan
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-
-                                {action.description && (
-                                  <p className="text-[11px] opacity-80 mb-2 leading-relaxed">
-                                    {action.description}
-                                  </p>
-                                )}
-
-                                {/* Action Buttons */}
-                                <div className="flex flex-wrap gap-1.5 mt-2">
-                                  {action.status === 'success' && (
-                                    <>
-                                      {action.type === 'create_event' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('kalender');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Buka Kalender <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                      {action.type === 'create_announcement' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('pengumuman');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Buka Pengumuman <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                      {action.type === 'create_note' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('notulensi');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Buka Notulensi <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                      {action.type === 'create_poll' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('voting');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Lihat Voting <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                      {action.type === 'create_aspirasi' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('aspirasi');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Lihat di Yapping Wall <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                      {action.type === 'create_absen_table' && (
-                                        <button
-                                          onClick={() => {
-                                            setActivePage('absen');
-                                            setIsOpen(false);
-                                          }}
-                                          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Buka Absensi <ChevronRight size={12} />
-                                        </button>
-                                      )}
-                                    </>
-                                  )}
-
-                                  {action.status === 'permission_denied' && (
-                                    <>
-                                      {action.requiresAdmin && !isAdmin && !isDewa && (
-                                        <button
-                                          onClick={() => {
-                                            onOpenAdminModal?.();
-                                          }}
-                                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          <Lock size={12} /> Masukkan PIN Admin
-                                        </button>
-                                      )}
-                                      {action.requiresAuth && !user && (
-                                        <button
-                                          onClick={handleLoginClick}
-                                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
-                                        >
-                                          Login Google
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => handleManualActionExecute(msg.id, idx)}
-                                        className="px-2.5 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                      >
-                                        Coba Lagi
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <span
-                          className={`text-[9px] block mt-1.5 opacity-60 ${
-                            msg.role === 'user' ? 'text-right' : 'text-left'
-                          }`}
-                        >
-                          {msg.timestamp}
+                      <div className="flex items-center gap-1 mt-0.5 truncate">
+                        <span className="text-[9px] sm:text-[10px] text-blue-100 flex items-center gap-1">
+                          {isDewa ? (
+                            <span className="text-amber-300 font-bold flex items-center gap-0.5">
+                              <Sparkles size={9} /> Dewa
+                            </span>
+                          ) : isAdmin ? (
+                            <span className="text-emerald-300 font-bold flex items-center gap-0.5">
+                              <ShieldCheck size={9} /> Admin
+                            </span>
+                          ) : user ? (
+                            <span className="text-blue-200 truncate">Mahasiswa</span>
+                          ) : (
+                            <span className="text-blue-300/80 truncate">Tamu</span>
+                          )}
                         </span>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Quick suggestion pills from AI */}
-                    {msg.quickSuggestions && msg.quickSuggestions.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2 pl-9">
-                        {msg.quickSuggestions.map((sug, i) => (
+                  {/* Header Controls */}
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                    {/* Template Drawer Toggle (Prominent) */}
+                    <button
+                      onClick={() => {
+                        setShowTemplates(!showTemplates);
+                        setActiveGuidedTemplate(null);
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm ${
+                        showTemplates 
+                          ? 'bg-amber-300 text-slate-950 ring-2 ring-white/50' 
+                          : 'bg-amber-400 hover:bg-amber-300 text-slate-950 hover:shadow-md'
+                      }`}
+                      title="Buka Format & Template Perintah"
+                    >
+                      <LayoutTemplate size={13} />
+                      <span>{showTemplates ? 'Tutup Template' : 'Template'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleClearHistory}
+                      className="p-1.5 sm:p-2 text-white/70 hover:text-white hover:bg-white/15 rounded-xl transition-all"
+                      title="Bersihkan Riwayat"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="hidden sm:flex p-1.5 sm:p-2 text-white/70 hover:text-white hover:bg-white/15 rounded-xl transition-all"
+                      title={isExpanded ? 'Kecilkan' : 'Perbesar'}
+                    >
+                      {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                    </button>
+                    <button
+                      onClick={() => setIsOpen(false)}
+                      className="p-1.5 sm:p-2 bg-white/10 hover:bg-red-500 text-white rounded-xl transition-all ml-0.5"
+                      title="Tutup (Esc)"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Main Body Area: Relative container holding Template Drawer & Chat */}
+                <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-50/50 dark:bg-[#0b1120]">
+                  {/* 📋 Template Drawer Overlay */}
+                  <AnimatePresence>
+                    {showTemplates && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute inset-0 z-30 bg-white dark:bg-[#0f172a] flex flex-col overflow-hidden"
+                      >
+                        {/* Drawer Header */}
+                        <div className="px-3.5 py-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border-b border-blue-100 dark:border-blue-900/40 flex items-center justify-between shrink-0">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-sm">
+                              <LayoutTemplate size={14} />
+                            </div>
+                            <div>
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight">
+                                Format & Template Siap Pakai
+                              </h4>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                Pilih format atau isi formulir cepat agar AI langsung mengeksekusi
+                              </p>
+                            </div>
+                          </div>
                           <button
-                            key={i}
-                            onClick={() => handleSendMessage(sug)}
-                            className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all text-left"
+                            onClick={() => {
+                              setShowTemplates(false);
+                              setActiveGuidedTemplate(null);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800"
+                            title="Tutup Template"
                           >
-                            💡 {sug}
+                            <X size={15} />
                           </button>
-                        ))}
+                        </div>
+
+                        {/* Search & Category Filter Bar */}
+                        {!activeGuidedTemplate && (
+                          <div className="p-2.5 border-b border-slate-100 dark:border-slate-800/80 bg-white dark:bg-[#0f172a] space-y-2 shrink-0">
+                            {/* Search */}
+                            <div className="relative">
+                              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={templateSearchQuery}
+                                onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                                placeholder="Cari template (jadwal, voting, absen, catatan)..."
+                                className="w-full text-xs py-1.5 pl-7 pr-3 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              {templateSearchQuery && (
+                                <button
+                                  onClick={() => setTemplateSearchQuery('')}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X size={12} />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Category Filter Pills */}
+                            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                              {[
+                                { id: 'all', label: 'Semua' },
+                                { id: 'jadwal', label: '📅 Jadwal' },
+                                { id: 'pengumuman', label: '📢 Pengumuman' },
+                                { id: 'notulensi', label: '📝 Notulensi' },
+                                { id: 'voting', label: '🗳️ Voting' },
+                                { id: 'aspirasi', label: '💬 Aspirasi' },
+                                { id: 'absen', label: '📊 Absensi' },
+                                { id: 'tools', label: '⚙️ Tools' },
+                              ].map((cat) => (
+                                <button
+                                  key={cat.id}
+                                  onClick={() => setTemplateFilterCategory(cat.id)}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                                    templateFilterCategory === cat.id
+                                      ? 'bg-blue-600 text-white shadow-sm'
+                                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {cat.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Guided Form Mode */}
+                        {activeGuidedTemplate ? (
+                          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3">
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                              <div className="flex items-center gap-2">
+                                <div className={`p-1.5 rounded-lg bg-gradient-to-r ${activeGuidedTemplate.color} text-white`}>
+                                  <activeGuidedTemplate.icon size={15} />
+                                </div>
+                                <div>
+                                  <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                    Form Cepat: {activeGuidedTemplate.title}
+                                  </h5>
+                                  <span className="text-[10px] text-slate-400">
+                                    Isi kolom di bawah untuk langsung dieksekusi oleh AI
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setActiveGuidedTemplate(null)}
+                                className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline"
+                              >
+                                Kembali
+                              </button>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              {activeGuidedTemplate.fields.map((f) => (
+                                <div key={f.key} className="space-y-1">
+                                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                    {f.label}
+                                  </label>
+                                  {f.type === 'textarea' ? (
+                                    <textarea
+                                      value={guidedFormValues[f.key] || ''}
+                                      onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
+                                      placeholder={f.placeholder}
+                                      rows={2}
+                                      className="w-full text-xs p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  ) : f.type === 'select' ? (
+                                    <select
+                                      value={guidedFormValues[f.key] || f.options?.[0]}
+                                      onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
+                                      className="w-full text-xs p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                      {f.options?.map((opt) => (
+                                        <option key={opt} value={opt}>
+                                          {opt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={guidedFormValues[f.key] || ''}
+                                      onChange={(e) => setGuidedFormValues({ ...guidedFormValues, [f.key]: e.target.value })}
+                                      placeholder={f.placeholder}
+                                      className="w-full text-xs p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="pt-2.5 flex items-center justify-end gap-2 border-t border-slate-200 dark:border-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => setActiveGuidedTemplate(null)}
+                                className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSubmitGuidedForm}
+                                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold shadow-md hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1.5 active:scale-95 transition-all"
+                              >
+                                <Sparkles size={13} />
+                                Jalankan Perintah AI
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Template Cards List */
+                          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
+                            <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-900 dark:text-blue-300 text-xs flex items-start gap-2">
+                              <HelpCircle size={14} className="text-blue-500 shrink-0 mt-0.5" />
+                              <p className="leading-relaxed text-[10px] sm:text-[11px]">
+                                Klik <strong>"Isi Form Cepat"</strong> untuk mengetik form khusus, atau <strong>"Tulis di Chat"</strong> untuk memuat format ke obrolan.
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-2">
+                              {PRESET_TEMPLATES
+                                .filter((tpl) => {
+                                  // Category filter
+                                  if (templateFilterCategory === 'jadwal' && tpl.id !== 'template_event') return false;
+                                  if (templateFilterCategory === 'pengumuman' && tpl.id !== 'template_announcement') return false;
+                                  if (templateFilterCategory === 'notulensi' && tpl.id !== 'template_note') return false;
+                                  if (templateFilterCategory === 'voting' && tpl.id !== 'template_poll') return false;
+                                  if (templateFilterCategory === 'aspirasi' && tpl.id !== 'template_aspirasi') return false;
+                                  if (templateFilterCategory === 'absen' && tpl.id !== 'template_table') return false;
+                                  if (templateFilterCategory === 'tools' && tpl.id !== 'template_spin' && tpl.id !== 'template_navigate') return false;
+
+                                  // Search filter
+                                  if (templateSearchQuery.trim()) {
+                                    const q = templateSearchQuery.toLowerCase();
+                                    return (
+                                      tpl.title.toLowerCase().includes(q) ||
+                                      tpl.description.toLowerCase().includes(q) ||
+                                      tpl.category.toLowerCase().includes(q) ||
+                                      tpl.rawTemplate.toLowerCase().includes(q)
+                                    );
+                                  }
+                                  return true;
+                                })
+                                .map((tpl) => {
+                                  const IconComponent = tpl.icon;
+                                  const isCopied = copiedId === tpl.id;
+
+                                  return (
+                                    <div
+                                      key={tpl.id}
+                                      className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-sm hover:border-blue-400/60 transition-all space-y-2"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-7 h-7 rounded-lg bg-gradient-to-tr ${tpl.color} text-white flex items-center justify-center shrink-0 shadow-sm`}>
+                                            <IconComponent size={14} />
+                                          </div>
+                                          <div>
+                                            <h5 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
+                                              {tpl.title}
+                                            </h5>
+                                            <span className="text-[9px] text-slate-400">
+                                              {tpl.category}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                          tpl.requiresAdmin 
+                                            ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300/40' 
+                                            : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40'
+                                        }`}>
+                                          {tpl.badge}
+                                        </span>
+                                      </div>
+
+                                      <p className="text-[10px] sm:text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                                        {tpl.description}
+                                      </p>
+
+                                      {/* Template Code Preview */}
+                                      <div className="bg-slate-100 dark:bg-[#151f32] p-2 rounded-xl text-[9px] sm:text-[10px] font-mono text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-800 whitespace-pre-wrap select-all">
+                                        {tpl.rawTemplate}
+                                      </div>
+
+                                      {/* Template Buttons */}
+                                      <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                                        <button
+                                          onClick={() => handleCopyTemplate(tpl)}
+                                          className="px-2 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-1 transition-all"
+                                        >
+                                          {isCopied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                                          {isCopied ? 'Tersalin' : 'Salin'}
+                                        </button>
+
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            onClick={() => handleInsertTemplateToInput(tpl)}
+                                            className="px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center gap-1 transition-all"
+                                            title="Masukkan ke kolom chat"
+                                          >
+                                            <Edit3 size={11} />
+                                            Tulis di Chat
+                                          </button>
+
+                                          {tpl.fields.length > 0 ? (
+                                            <button
+                                              onClick={() => handleStartGuidedForm(tpl)}
+                                              className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1 transition-all"
+                                            >
+                                              <Sparkles size={11} />
+                                              Isi Form Cepat
+                                            </button>
+                                          ) : (
+                                            <button
+                                              onClick={() => {
+                                                setShowTemplates(false);
+                                                handleSendMessage(tpl.samplePrompt);
+                                              }}
+                                              className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm hover:from-blue-700 hover:to-indigo-700 flex items-center gap-1 transition-all"
+                                            >
+                                              <Sparkles size={11} />
+                                              Eksekusi
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Chat Message List */}
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3.5 scroll-smooth">
+                    {messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                      >
+                        <div className="flex items-end gap-2 max-w-[90%] sm:max-w-[85%]">
+                          {msg.role === 'assistant' && (
+                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shrink-0 mb-1 shadow-sm">
+                              <Bot size={14} />
+                            </div>
+                          )}
+
+                          <div
+                            className={`rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed shadow-sm ${
+                              msg.role === 'user'
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-none'
+                                : 'bg-white dark:bg-[#1e293b] text-slate-800 dark:text-slate-100 rounded-bl-none border border-slate-200/70 dark:border-slate-700/60'
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap font-sans">{msg.text}</p>
+
+                            {/* Template Code Suggestion from AI */}
+                            {msg.templateCode && (
+                              <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900 text-slate-100 border border-slate-700 text-xs font-mono">
+                                <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-800 text-[9px] sm:text-[10px] text-slate-400 font-sans">
+                                  <span>📋 Format Template Terstruktur</span>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(msg.templateCode || '');
+                                      setCopiedId(msg.id);
+                                      setTimeout(() => setCopiedId(null), 2000);
+                                    }}
+                                    className="text-blue-400 hover:text-blue-300 flex items-center gap-1 font-bold"
+                                  >
+                                    {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
+                                    {copiedId === msg.id ? 'Tersalin' : 'Salin'}
+                                  </button>
+                                </div>
+                                <pre className="whitespace-pre-wrap text-[10px] sm:text-[11px] leading-relaxed select-all font-mono text-emerald-300">
+                                  {msg.templateCode}
+                                </pre>
+                                <button
+                                  onClick={() => {
+                                    setInputMessage(msg.templateCode || '');
+                                    inputRef.current?.focus();
+                                  }}
+                                  className="mt-2 w-full py-1 text-center bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold font-sans transition-all"
+                                >
+                                  Gunakan Format Ini di Chat
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Executed Action Cards */}
+                            {msg.actions && msg.actions.length > 0 && (
+                              <div className="mt-2.5 space-y-2 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
+                                {msg.actions.map((action, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`p-2.5 rounded-xl border text-xs ${
+                                      action.status === 'success'
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-300'
+                                        : action.status === 'permission_denied'
+                                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-300'
+                                        : action.status === 'error'
+                                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-300'
+                                        : 'bg-blue-500/10 border-blue-500/30 text-blue-900 dark:text-blue-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                      <div className="flex items-center gap-1.5 font-bold truncate">
+                                        {action.type === 'create_event' && <CalendarIcon size={13} className="text-blue-500 shrink-0" />}
+                                        {action.type === 'create_announcement' && <Bell size={13} className="text-amber-500 shrink-0" />}
+                                        {action.type === 'create_note' && <FileText size={13} className="text-purple-500 shrink-0" />}
+                                        {action.type === 'create_poll' && <Vote size={13} className="text-emerald-500 shrink-0" />}
+                                        {action.type === 'create_aspirasi' && <MessageSquare size={13} className="text-pink-500 shrink-0" />}
+                                        {action.type === 'create_absen_table' && <Table size={13} className="text-indigo-500 shrink-0" />}
+                                        {action.type === 'spin_wheel' && <RotateCw size={13} className="text-sky-500 shrink-0" />}
+                                        <span className="truncate">{action.title || 'Aksi Otomatis'}</span>
+                                      </div>
+
+                                      {/* Status badge */}
+                                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0">
+                                        {action.status === 'success' && (
+                                          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                            <CheckCircle2 size={11} /> Berhasil
+                                          </span>
+                                        )}
+                                        {action.status === 'permission_denied' && (
+                                          <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                            <Lock size={11} /> Butuh PIN
+                                          </span>
+                                        )}
+                                        {action.status === 'error' && (
+                                          <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                                            <ShieldAlert size={11} /> Gagal
+                                          </span>
+                                        )}
+                                        {action.status === 'executing' && (
+                                          <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                            <Loader2 size={11} className="animate-spin" /> Menjalankan
+                                          </span>
+                                        )}
+                                      </span>
+                                    </div>
+
+                                    {action.description && (
+                                      <p className="text-[10px] sm:text-[11px] opacity-80 mb-1.5 leading-relaxed">
+                                        {action.description}
+                                      </p>
+                                    )}
+
+                                    {/* Action Buttons */}
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {action.status === 'success' && (
+                                        <>
+                                          {action.type === 'create_event' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('kalender');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Buka Kalender <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'create_announcement' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('pengumuman');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Buka Pengumuman <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'create_note' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('notulensi');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Buka Notulensi <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'create_poll' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('voting');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Lihat Voting <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'create_aspirasi' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('aspirasi');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Lihat Yapping Wall <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'create_absen_table' && (
+                                            <button
+                                              onClick={() => {
+                                                setActivePage('absen');
+                                                setIsOpen(false);
+                                              }}
+                                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Buka Absensi <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                        </>
+                                      )}
+
+                                      {action.status === 'permission_denied' && (
+                                        <>
+                                          {action.requiresAdmin && !isAdmin && !isDewa && (
+                                            <button
+                                              onClick={() => {
+                                                onOpenAdminModal?.();
+                                              }}
+                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              <Lock size={11} /> Masukkan PIN Admin
+                                            </button>
+                                          )}
+                                          {action.requiresAuth && !user && (
+                                            <button
+                                              onClick={handleLoginClick}
+                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                            >
+                                              Login Akun
+                                            </button>
+                                          )}
+                                          <button
+                                            onClick={() => handleManualActionExecute(msg.id, idx)}
+                                            className="px-2.5 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[9px] sm:text-[10px] font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
+                                          >
+                                            Coba Lagi
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <span
+                              className={`text-[8px] sm:text-[9px] block mt-1 opacity-60 ${
+                                msg.role === 'user' ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {msg.timestamp}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Quick suggestion pills from AI */}
+                        {msg.quickSuggestions && msg.quickSuggestions.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5 pl-8">
+                            {msg.quickSuggestions.map((sug, i) => (
+                              <button
+                                key={i}
+                                onClick={() => {
+                                  if (sug.includes('Template')) {
+                                    setShowTemplates(true);
+                                  } else {
+                                    handleSendMessage(sug);
+                                  }
+                                }}
+                                className="px-2 py-1 rounded-full text-[10px] sm:text-[11px] font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all text-left flex items-center gap-1"
+                              >
+                                <span>💡 {sug}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {isLoading && (
+                      <div className="flex items-end gap-2 max-w-[85%]">
+                        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shrink-0 mb-1">
+                          <Bot size={14} />
+                        </div>
+                        <div className="bg-white dark:bg-[#1e293b] rounded-2xl rounded-bl-none px-3.5 py-2.5 text-xs flex items-center gap-2 border border-slate-200/60 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 shadow-sm">
+                          <Loader2 size={14} className="animate-spin text-blue-500" />
+                          <span>InterBypass sedang menjalankan perintah...</span>
+                        </div>
                       </div>
                     )}
+
+                    <div ref={messagesEndRef} />
                   </div>
-                ))}
 
-                {isLoading && (
-                  <div className="flex items-end gap-2 max-w-[85%]">
-                    <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center shrink-0 mb-1">
-                      <Bot size={15} />
-                    </div>
-                    <div className="bg-slate-100 dark:bg-[#1e293b] rounded-2xl rounded-bl-none px-4 py-3 text-xs flex items-center gap-2 border border-slate-200/60 dark:border-slate-700/60 text-slate-500 dark:text-slate-400">
-                      <Loader2 size={15} className="animate-spin text-blue-500" />
-                      <span>InterBypass sedang menganalisis & menjalankan perintah...</span>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Quick default suggestions bar on bottom */}
-              {messages.length <= 2 && (
-                <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/30 overflow-x-auto whitespace-nowrap scrollbar-hide no-scrollbar flex items-center gap-1.5">
-                  <button
-                    onClick={() => setShowTemplates(true)}
-                    className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white font-bold shadow-sm hover:bg-blue-700 transition-all shrink-0 flex items-center gap-1"
-                  >
-                    <LayoutTemplate size={12} />
-                    Format Template
-                  </button>
-                  {PRESET_TEMPLATES.slice(0, 4).map((tpl) => (
+                  {/* Always accessible quick suggestion toolbar above input */}
+                  <div className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-800/60 bg-white/80 dark:bg-slate-900/60 overflow-x-auto whitespace-nowrap scrollbar-hide no-scrollbar flex items-center gap-1.5 shrink-0">
                     <button
-                      key={tpl.id}
-                      onClick={() => handleSendMessage(tpl.samplePrompt)}
-                      className="px-2.5 py-1 rounded-lg text-xs bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all shrink-0"
+                      onClick={() => setShowTemplates(!showTemplates)}
+                      className="px-2.5 py-1 rounded-lg text-[10px] sm:text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold shadow-sm transition-all shrink-0 flex items-center gap-1"
                     >
-                      {tpl.category}
+                      <LayoutTemplate size={12} />
+                      <span>{showTemplates ? 'Tutup Template' : '📋 Template Format'}</span>
                     </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Input Area */}
-              <div className="p-3 bg-white dark:bg-[#0f172a] border-t border-slate-200/60 dark:border-slate-800/80">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <div className="relative flex-1">
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      placeholder={isListening ? 'Mendengarkan suara Anda...' : 'Ketik perintah atau gunakan template (contoh: [Jadwal] Judul:...)'}
-                      disabled={isLoading}
-                      className={`w-full py-3 pl-4 pr-10 text-xs md:text-sm bg-slate-100 dark:bg-slate-800/90 text-slate-850 dark:text-white rounded-2xl border ${
-                        isListening
-                          ? 'border-red-500 ring-2 ring-red-500/20'
-                          : 'border-slate-200 dark:border-slate-700/80 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
-                      } outline-none transition-all`}
-                    />
-                    
-                    {/* Voice button */}
-                    <button
-                      type="button"
-                      onClick={toggleVoice}
-                      className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-all ${
-                        isListening 
-                          ? 'bg-red-500 text-white animate-pulse' 
-                          : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                      title={isListening ? 'Berhenti mendengar' : 'Input Suara'}
-                    >
-                      {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-                    </button>
+                    {PRESET_TEMPLATES.slice(0, 4).map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        onClick={() => handleSendMessage(tpl.samplePrompt)}
+                        className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all shrink-0"
+                      >
+                        {tpl.category}
+                      </button>
+                    ))}
                   </div>
-
-                  <button
-                    type="submit"
-                    disabled={!inputMessage.trim() || isLoading}
-                    className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl shadow-md hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shrink-0"
-                    title="Kirim Perintah"
-                  >
-                    <Send size={16} />
-                  </button>
-                </form>
-                <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 px-1">
-                  <span className="flex items-center gap-1">
-                    <LayoutTemplate size={11} className="text-blue-500" />
-                    Klik tombol <strong>Template</strong> di atas untuk format rapi & form terpandu
-                  </span>
-                  <span className="hidden sm:inline">Tekan Enter ↵</span>
                 </div>
-              </div>
-            </motion.div>
-          </div>
+
+                {/* Input Area (Pinned at bottom, shrink-0) */}
+                <div className="p-2.5 sm:p-3 bg-white dark:bg-[#0f172a] border-t border-slate-200/70 dark:border-slate-800/80 shrink-0">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }}
+                    className="flex items-center gap-1.5 sm:gap-2"
+                  >
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        placeholder={isListening ? 'Mendengarkan suara...' : 'Ketik perintah atau gunakan template...'}
+                        disabled={isLoading}
+                        className={`w-full py-2.5 pl-3.5 pr-9 text-xs sm:text-sm bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl sm:rounded-2xl border ${
+                          isListening
+                            ? 'border-red-500 ring-2 ring-red-500/20'
+                            : 'border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+                        } outline-none transition-all`}
+                      />
+                      
+                      {/* Voice button */}
+                      <button
+                        type="button"
+                        onClick={toggleVoice}
+                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all ${
+                          isListening 
+                            ? 'bg-red-500 text-white animate-pulse' 
+                            : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                        title={isListening ? 'Berhenti mendengar' : 'Input Suara'}
+                      >
+                        {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={!inputMessage.trim() || isLoading}
+                      className="p-2.5 sm:p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl sm:rounded-2xl shadow-md hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shrink-0"
+                      title="Kirim Perintah"
+                    >
+                      <Send size={15} />
+                    </button>
+                  </form>
+                  <div className="mt-1 flex items-center justify-between text-[9px] sm:text-[10px] text-slate-400 px-1">
+                    <span className="flex items-center gap-1">
+                      <Sparkles size={10} className="text-amber-500" />
+                      Gunakan tombol <strong>Template</strong> untuk format instan
+                    </span>
+                    <span className="hidden sm:inline">Tekan Esc untuk tutup</span>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </>
         )}
       </AnimatePresence>
     </>

@@ -14,7 +14,10 @@ import {
   ShieldAlert,
   Terminal,
   Activity,
-  Database
+  Database,
+  Bot,
+  Sparkles,
+  MessageSquare
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../lib/firebase';
@@ -404,6 +407,14 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
 
                   <div className="flex flex-wrap gap-3 sm:gap-4">
                     <button 
+                      onClick={() => setActivePage('bypass')}
+                      className="group flex items-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 rounded-xl sm:rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:from-amber-300 hover:to-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-95"
+                    >
+                      <Bot size={16} className="animate-bounce" />
+                      Bypass AI Copilot
+                      <ChevronRight size={15} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                    <button 
                       onClick={() => setActivePage('notulensi')}
                       className="group flex items-center gap-3 px-6 sm:px-8 py-3 sm:py-3.5 bg-white text-blue-700 rounded-xl sm:rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-white/95 transition-all shadow-xl shadow-blue-900/30 active:scale-95"
                     >
@@ -501,12 +512,46 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
               </div>
 
               <div className="flex flex-col justify-between">
-                <div className="hidden md:block">
-                  <div className="w-full aspect-square max-h-[220px] opacity-10 dark:opacity-20 pointer-events-none mx-auto">
-                     <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" className="w-full h-full fill-blue-500">
-                        <path d="M44.7,-76.4C58,-69.2,69.2,-58,76.4,-44.7C83.6,-31.4,86.7,-15.7,85.6,-0.6C84.5,14.5,79.2,28.9,71.1,41.4C63,53.8,52.1,64.3,39.3,71.5C26.5,78.7,11.8,82.5,-3.1,87.9C-18,93.4,-33.2,100.4,-45.5,95.5C-57.7,90.6,-67.1,73.8,-74.6,58.3C-82.1,42.8,-87.6,28.5,-89.7,13.6C-91.8,-1.3,-90.4,-16.8,-84.9,-30.9C-79.3,-45,-69.6,-57.7,-57.1,-65.4C-44.7,-73.2,-29.4,-76,-13.7,-81.4C2,-86.8,17.7,-94.7,33.3,-92.9C48.9,-91.1,64.4,-79.6,44.7,-76.4Z" transform="translate(100 100)" />
-                     </svg>
+                {/* AI Bypass Interactive Feature Showcase Widget */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-600/10 via-indigo-600/5 to-transparent border border-blue-500/20 dark:border-blue-400/20 relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-blue-600 text-white shadow-md">
+                        <Bot size={18} className="animate-bounce" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">InterBypass AI</h4>
+                        <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">Asisten Eksekusi Otomatis</p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider border border-emerald-500/20 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                      Siap
+                    </span>
                   </div>
+
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
+                    Perintahkan AI secara instan untuk membuat jadwal kelas, voting baru, broadcast pengumuman, atau notulensi rapat dengan template terstruktur.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/5 text-left">
+                      <p className="text-[9px] font-black uppercase tracking-wider text-blue-500">Template Siap</p>
+                      <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">8 Format Preset</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/5 text-left">
+                      <p className="text-[9px] font-black uppercase tracking-wider text-emerald-500">Hak Akses</p>
+                      <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">Terverifikasi Role</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setActivePage('bypass')}
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  >
+                    <Sparkles size={14} className="text-yellow-300" />
+                    Buka Room Chat Bypass AI
+                  </button>
                 </div>
 
                 <div className="mt-8 md:mt-0 pt-6 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
