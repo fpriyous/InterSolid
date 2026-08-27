@@ -29,7 +29,14 @@ import {
   Compass, 
   HelpCircle, 
   Layers,
-  Search
+  Search,
+  LayoutGrid,
+  ImageIcon,
+  Video,
+  Trophy,
+  CheckCircle,
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
@@ -69,6 +76,263 @@ interface ChatMessage {
   quickSuggestions?: string[];
   templateCode?: string;
 }
+
+export interface AppFeatureItem {
+  id: string;
+  label: string;
+  description: string;
+  icon: any;
+  color: string;
+  badge: string;
+}
+
+export const APP_FEATURES: AppFeatureItem[] = [
+  { id: 'kalender', label: 'Kalender & Jadwal', description: 'Atur jadwal kuliah, deadline tugas & ujian', icon: CalendarIcon, color: 'from-blue-500 to-indigo-600', badge: 'Jadwal' },
+  { id: 'pengumuman', label: 'Pengumuman Kelas', description: 'Broadcast info resmi pengurus', icon: Bell, color: 'from-amber-500 to-orange-600', badge: 'Info Resmi' },
+  { id: 'notulensi', label: 'Notulensi & Catatan', description: 'Catatan rapat, resume materi kuliah', icon: FileText, color: 'from-purple-500 to-indigo-600', badge: 'Materi' },
+  { id: 'voting', label: 'Vote & Polling', description: 'Pemungutan suara & ballot digital', icon: Vote, color: 'from-emerald-500 to-teal-600', badge: 'Polling' },
+  { id: 'aspirasi', label: 'Yapping Wall', description: 'Aspirasi & curhat anonim mahasiswa', icon: MessageSquare, color: 'from-pink-500 to-rose-600', badge: 'Anonim' },
+  { id: 'absen', label: 'Data & Absensi', description: 'Checklist absensi & catatan kas', icon: CheckCircle, color: 'from-indigo-500 to-cyan-600', badge: 'Absensi' },
+  { id: 'spin', label: 'Spin Wheel', description: 'Undian acak giliran & doorprize', icon: RotateCw, color: 'from-sky-500 to-blue-600', badge: 'Undian' },
+  { id: 'study', label: 'Auto Paham AI', description: 'Tutor pintar Hubungan Internasional', icon: Sparkles, color: 'from-violet-500 to-indigo-600', badge: 'Tutor AI' },
+  { id: 'memory', label: 'Galeri Memo', description: 'Foto kenangan & dokumentasi angkatan', icon: ImageIcon, color: 'from-rose-500 to-red-600', badge: 'Galeri' },
+  { id: 'profiles', label: 'Video Profile', description: 'Video perkenalan 10 detik mahasiswa', icon: Video, color: 'from-teal-500 to-emerald-600', badge: 'Perkenalan' },
+  { id: 'interlingo', label: 'InterLingo', description: 'Kuis mini kosakata Mandarin santai', icon: Trophy, color: 'from-yellow-500 to-amber-600', badge: 'Mandarin' },
+  { id: 'home', label: 'Dashboard Utama', description: 'Beranda & statistik kelas real-time', icon: LayoutGrid, color: 'from-slate-600 to-slate-800', badge: 'Utama' },
+];
+
+export const normalizePage = (p?: string | null): string => {
+  if (!p) return 'home';
+  const raw = p.toLowerCase().trim();
+  if (raw === 'home' || raw.includes('dashboard') || raw.includes('beranda') || raw.includes('utama')) return 'home';
+  if (raw.includes('kalender') || raw.includes('calendar') || raw.includes('jadwal') || raw.includes('event')) return 'kalender';
+  if (raw.includes('pengumuman') || raw.includes('announce') || raw.includes('broadcast')) return 'pengumuman';
+  if (raw.includes('notulensi') || raw.includes('note') || raw.includes('catatan') || raw.includes('materi')) return 'notulensi';
+  if (raw.includes('voting') || raw.includes('vote') || raw.includes('poll') || raw.includes('pemungutan')) return 'voting';
+  if (raw.includes('aspirasi') || raw.includes('yapping') || raw.includes('curhat') || raw.includes('saran')) return 'aspirasi';
+  if (raw.includes('absen') || raw.includes('attendance') || raw.includes('tabel') || raw.includes('kas')) return 'absen';
+  if (raw.includes('spin') || raw.includes('wheel') || raw.includes('undian') || raw.includes('acak')) return 'spin';
+  if (raw.includes('study') || raw.includes('paham') || raw.includes('tutor') || raw.includes('companion')) return 'study';
+  if (raw.includes('memory') || raw.includes('memo') || raw.includes('galeri') || raw.includes('gallery') || raw.includes('foto')) return 'memory';
+  if (raw.includes('profile') || raw.includes('profil') || raw.includes('video')) return 'profiles';
+  if (raw.includes('lingo') || raw.includes('mandarin') || raw.includes('bahasa')) return 'interlingo';
+  return raw;
+};
+
+export const getFeatureMeta = (pageId?: string | null) => {
+  const normalized = normalizePage(pageId);
+  return APP_FEATURES.find(f => f.id === normalized) || {
+    id: normalized,
+    label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+    description: 'Buka fitur ' + normalized,
+    icon: Compass,
+    color: 'from-blue-600 to-indigo-600',
+    badge: 'Fitur'
+  };
+};
+
+/**
+ * Parses markdown inline formatting (bold, italic, code) while strictly stripping
+ * any raw unparsed asterisk (*) characters so zero asterisks are visible in the chat UI.
+ */
+const parseInlineFormatting = (text: string, isUser: boolean) => {
+  if (!text) return null;
+
+  // Split by inline backtick code `code`
+  const codeRegex = /`([^`]+)`/g;
+  const segments: (string | { type: 'code'; val: string })[] = [];
+  let lastIdx = 0;
+  let codeMatch;
+
+  while ((codeMatch = codeRegex.exec(text)) !== null) {
+    if (codeMatch.index > lastIdx) {
+      segments.push(text.substring(lastIdx, codeMatch.index));
+    }
+    segments.push({ type: 'code', val: codeMatch[1] });
+    lastIdx = codeRegex.lastIndex;
+  }
+  if (lastIdx < text.length) {
+    segments.push(text.substring(lastIdx));
+  }
+
+  const resultNodes: React.ReactNode[] = [];
+
+  segments.forEach((seg, segIdx) => {
+    if (typeof seg !== 'string') {
+      resultNodes.push(
+        <code 
+          key={`code-${segIdx}`} 
+          className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold ${
+            isUser 
+              ? 'bg-white/20 text-white' 
+              : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40'
+          }`}
+        >
+          {seg.val.replace(/\*/g, '')}
+        </code>
+      );
+      return;
+    }
+
+    // Process bold (**bold**)
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    const boldParts: (string | { type: 'bold'; val: string })[] = [];
+    let bLast = 0;
+    let bMatch;
+
+    while ((bMatch = boldRegex.exec(seg)) !== null) {
+      if (bMatch.index > bLast) {
+        boldParts.push(seg.substring(bLast, bMatch.index));
+      }
+      boldParts.push({ type: 'bold', val: bMatch[1] });
+      bLast = boldRegex.lastIndex;
+    }
+    if (bLast < seg.length) {
+      boldParts.push(seg.substring(bLast));
+    }
+
+    boldParts.forEach((bPart, bIdx) => {
+      if (typeof bPart !== 'string') {
+        const cleanBoldVal = bPart.val.replace(/\*/g, '').trim();
+        resultNodes.push(
+          <strong 
+            key={`b-${segIdx}-${bIdx}`} 
+            className={`font-black ${isUser ? 'text-white' : 'text-slate-900 dark:text-white'}`}
+          >
+            {cleanBoldVal}
+          </strong>
+        );
+        return;
+      }
+
+      // Process italic (*italic* or _italic_)
+      const italicRegex = /\*([^*]+)\*|_([^_]+)_/g;
+      const iParts: (string | { type: 'italic'; val: string })[] = [];
+      let iLast = 0;
+      let iMatch;
+
+      while ((iMatch = italicRegex.exec(bPart)) !== null) {
+        if (iMatch.index > iLast) {
+          iParts.push(bPart.substring(iLast, iMatch.index));
+        }
+        iParts.push({ type: 'italic', val: iMatch[1] || iMatch[2] });
+        iLast = italicRegex.lastIndex;
+      }
+      if (iLast < bPart.length) {
+        iParts.push(bPart.substring(iLast));
+      }
+
+      iParts.forEach((iPart, iIdx) => {
+        if (typeof iPart !== 'string') {
+          const cleanItalicVal = iPart.val.replace(/\*/g, '').trim();
+          resultNodes.push(
+            <em 
+              key={`i-${segIdx}-${bIdx}-${iIdx}`} 
+              className={`italic font-medium ${isUser ? 'text-blue-100' : 'text-slate-700 dark:text-slate-200'}`}
+            >
+              {cleanItalicVal}
+            </em>
+          );
+        } else {
+          // Plain text - strip any leftover asterisk symbol!
+          const cleanText = iPart.replace(/\*/g, '');
+          if (cleanText) {
+            resultNodes.push(
+              <React.Fragment key={`t-${segIdx}-${bIdx}-${iIdx}`}>
+                {cleanText}
+              </React.Fragment>
+            );
+          }
+        }
+      });
+    });
+  });
+
+  return resultNodes;
+};
+
+/**
+ * Format chat message into beautiful paragraphs, lists, and headings
+ * with zero raw asterisks visible.
+ */
+export const formatBypassText = (rawText: string, isUser: boolean = false) => {
+  if (!rawText) return null;
+
+  const lines = rawText.split('\n');
+
+  return (
+    <div className="space-y-1 text-xs sm:text-sm leading-relaxed">
+      {lines.map((line, lineIdx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={lineIdx} className="h-1" />;
+        }
+
+        // Heading detection (###, ##, #)
+        const headingMatch = trimmed.match(/^#{1,4}\s+(.+)$/);
+        if (headingMatch) {
+          const headingText = headingMatch[1].replace(/\*/g, '');
+          return (
+            <h4 
+              key={lineIdx} 
+              className={`font-bold mt-2 mb-1 text-xs sm:text-sm ${
+                isUser ? 'text-white font-black' : 'text-blue-600 dark:text-blue-400'
+              }`}
+            >
+              {parseInlineFormatting(headingText, isUser)}
+            </h4>
+          );
+        }
+
+        // Bullet list detection (*, -, +, •)
+        const isBullet = /^[*\-•+]\s+/.test(trimmed);
+        // Numbered list detection (1., 2., etc.)
+        const isNumbered = /^\d+\.\s+/.test(trimmed);
+
+        let contentText = trimmed;
+        let bulletIcon = null;
+
+        if (isBullet) {
+          contentText = trimmed.replace(/^[*\-•+]\s+/, '');
+          bulletIcon = (
+            <span className={`inline-block w-1.5 h-1.5 rounded-full mr-2 shrink-0 mt-1.5 ${
+              isUser ? 'bg-white' : 'bg-blue-500 dark:bg-blue-400'
+            }`} />
+          );
+        } else if (isNumbered) {
+          const numMatch = trimmed.match(/^(\d+\.)\s+/);
+          if (numMatch) {
+            contentText = trimmed.substring(numMatch[0].length);
+            bulletIcon = (
+              <span className={`font-black text-[10px] sm:text-xs mr-1.5 shrink-0 ${
+                isUser ? 'text-white' : 'text-blue-600 dark:text-blue-400'
+              }`}>
+                {numMatch[1]}
+              </span>
+            );
+          }
+        }
+
+        const nodes = parseInlineFormatting(contentText, isUser);
+
+        if (isBullet || isNumbered) {
+          return (
+            <div key={lineIdx} className="flex items-start pl-1 my-0.5">
+              {bulletIcon}
+              <div className="flex-1 min-w-0">{nodes}</div>
+            </div>
+          );
+        }
+
+        return (
+          <p key={lineIdx} className="min-h-[1rem]">
+            {nodes}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
 
 interface PresetTemplate {
   id: string;
@@ -297,8 +561,8 @@ export default function AIBypassChat({
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         quickSuggestions: [
           '📋 Buka Template Perintah',
-          '📅 Buat jadwal tugas kelompok',
-          '📢 Bikin pengumuman penting',
+          '📅 Buka Kalender',
+          '📢 Bikin pengumuman resmi',
           '🗳️ Buat voting lokasi makrab'
         ]
       }
@@ -324,6 +588,43 @@ export default function AIBypassChat({
   useEffect(() => {
     localStorage.setItem('IS_aiBypassMessages', JSON.stringify(messages.slice(-30)));
   }, [messages]);
+
+  // Safe navigation handler to switch page and close drawer smoothly
+  const handleNavigateToFeature = (rawPageId: string, targetId: string | null = null) => {
+    const page = normalizePage(rawPageId);
+    try {
+      setActivePage(page, targetId);
+      setIsOpen(false);
+    } catch (err) {
+      console.error('Failed to navigate from AI Bypass:', err);
+    }
+  };
+
+  const isDirectNavigationSuggestion = (text: string): string | null => {
+    const t = text.toLowerCase().trim();
+    if (
+      t.startsWith('buka ') || 
+      t.startsWith('lihat ') || 
+      t.startsWith('menuju ') || 
+      t.startsWith('ke ') ||
+      t.includes('halaman') ||
+      t.includes('kalender') ||
+      t.includes('pengumuman') ||
+      t.includes('voting') ||
+      t.includes('notulensi') ||
+      t.includes('aspirasi') ||
+      t.includes('yapping') ||
+      t.includes('absen') ||
+      t.includes('spin') ||
+      t.includes('study') ||
+      t.includes('memory') ||
+      t.includes('profiles') ||
+      t.includes('interlingo')
+    ) {
+      return normalizePage(t);
+    }
+    return null;
+  };
 
   // Keyboard shortcut: Escape to close drawer or modal
   useEffect(() => {
@@ -795,10 +1096,11 @@ export default function AIBypassChat({
 
   return (
     <>
-      {/* 🚀 Floating Launch Button */}
+      {/* 🚀 Floating Launch Button (Always prominent on mobile & desktop) */}
       <div 
         id="ai-bypass-launcher-container"
-        className="fixed z-[180] bottom-20 md:bottom-7 right-4 md:right-7 flex flex-col items-end pointer-events-auto select-none"
+        className="fixed z-[180] bottom-24 md:bottom-6 right-3.5 md:right-6 flex flex-col items-end pointer-events-auto select-none"
+        style={{ touchAction: 'manipulation' }}
       >
         <AnimatePresence>
           {!isOpen && (
@@ -806,36 +1108,36 @@ export default function AIBypassChat({
               initial={{ scale: 0, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0, opacity: 0, y: 15 }}
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               className="relative group"
             >
               {/* Pulsing Aura */}
-              <div className="absolute -inset-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-sky-400 rounded-full blur-md opacity-60 group-hover:opacity-100 animate-pulse transition duration-500" />
+              <div className="absolute -inset-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-sky-400 rounded-full blur-md opacity-75 group-hover:opacity-100 animate-pulse transition duration-500" />
               
-              {/* Tooltip Notification */}
-              <div className="absolute -top-10 right-0 bg-[#0c1829] text-white text-[11px] font-bold px-3 py-1 rounded-full whitespace-nowrap shadow-lg border border-blue-400/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none flex items-center gap-1.5">
+              {/* Tooltip Notification on Desktop */}
+              <div className="hidden md:flex absolute -top-10 right-0 bg-[#0c1829] text-white text-[11px] font-bold px-3 py-1 rounded-full whitespace-nowrap shadow-xl border border-blue-400/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none items-center gap-1.5 z-20">
                 <Sparkles size={12} className="text-yellow-400 animate-spin" />
                 <span>InterBypass AI Copilot</span>
               </div>
 
-              {/* Main Button */}
+              {/* Main Floating Button */}
               <button
                 id="btn-ai-bypass-toggle"
                 onClick={() => setIsOpen(true)}
-                className="relative flex items-center gap-2.5 px-4 py-3.5 md:py-3.5 md:px-5 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white rounded-full shadow-2xl border border-white/20 hover:shadow-blue-500/40 transition-all"
+                className="relative flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white rounded-full shadow-2xl border border-white/30 hover:shadow-blue-500/50 transition-all active:scale-95"
                 title="Buka InterBypass AI"
               >
-                <div className="relative">
-                  <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center backdrop-blur-sm">
-                    <Bot size={19} className="text-white animate-bounce" />
+                <div className="relative shrink-0">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm shadow-inner">
+                    <Bot size={18} className="text-white" />
                   </div>
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 border-2 border-blue-900 rounded-full animate-ping" />
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 border-2 border-blue-900 rounded-full" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-blue-900 rounded-full animate-ping" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-blue-900 rounded-full" />
                 </div>
-                <div className="text-left hidden sm:block">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-blue-200 leading-none">Bypass AI</p>
-                  <p className="text-xs font-bold text-white leading-tight">Copilot Kelas</p>
+                <div className="text-left flex flex-col justify-center pr-1">
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-blue-200 leading-none">Bypass AI</span>
+                  <span className="text-[11px] sm:text-xs font-bold text-white leading-tight">Copilot</span>
                 </div>
               </button>
             </motion.div>
@@ -849,7 +1151,7 @@ export default function AIBypassChat({
           <>
             {/* Backdrop overlay for mobile & expanded */}
             <div 
-              className={`fixed inset-0 z-[185] bg-slate-950/40 backdrop-blur-[2px] transition-opacity ${isExpanded ? 'block' : 'sm:hidden block'}`}
+              className={`fixed inset-0 z-[185] bg-slate-950/50 backdrop-blur-[3px] transition-opacity ${isExpanded ? 'block' : 'sm:hidden block'}`}
               onClick={() => setIsOpen(false)}
             />
 
@@ -857,19 +1159,19 @@ export default function AIBypassChat({
               id="ai-bypass-chat-modal"
               className={`fixed z-[190] ${
                 isExpanded 
-                  ? 'inset-2 sm:inset-5 md:inset-8' 
-                  : 'bottom-2 right-2 sm:bottom-4 sm:right-4 md:bottom-5 md:right-5 w-[calc(100vw-1rem)] sm:w-[450px] md:w-[480px] max-w-[calc(100vw-1rem)] h-[min(570px,calc(100dvh-4.5rem))] max-h-[calc(100dvh-3.5rem)]'
-              } flex flex-col pointer-events-auto`}
+                  ? 'inset-3 sm:inset-6 md:inset-8 lg:inset-10 max-w-5xl mx-auto my-auto h-[min(90vh,880px)]' 
+                  : 'inset-x-2.5 bottom-2.5 top-3.5 sm:top-auto sm:inset-x-auto sm:bottom-5 sm:right-5 sm:w-[470px] md:w-[500px] lg:w-[520px] sm:h-[min(640px,calc(100dvh-4.5rem))]'
+              } flex flex-col pointer-events-auto transition-all`}
             >
               <motion.div 
-                initial={{ opacity: 0, scale: 0.92, y: 25 }}
+                initial={{ opacity: 0, scale: 0.94, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, y: 25 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="flex-1 flex flex-col bg-white dark:bg-[#0f172a] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden ring-1 ring-black/10 relative"
+                exit={{ opacity: 0, scale: 0.94, y: 20 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                className="flex-1 flex flex-col bg-white dark:bg-[#0f172a] rounded-[26px] sm:rounded-[30px] shadow-2xl border border-slate-200/90 dark:border-slate-800 overflow-hidden ring-1 ring-black/10 relative"
               >
                 {/* Header */}
-                <div className="flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white border-b border-white/10 shadow-sm select-none shrink-0">
+                <div className="flex items-center justify-between px-3.5 sm:px-5 py-2.5 sm:py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white border-b border-white/10 shadow-sm select-none shrink-0">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="relative shrink-0">
                       <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner border border-white/20">
@@ -888,11 +1190,11 @@ export default function AIBypassChat({
                         <span className="text-[9px] sm:text-[10px] text-blue-100 flex items-center gap-1">
                           {isDewa ? (
                             <span className="text-amber-300 font-bold flex items-center gap-0.5">
-                              <Sparkles size={9} /> Dewa
+                              <Sparkles size={9} /> Akses Dewa
                             </span>
                           ) : isAdmin ? (
                             <span className="text-emerald-300 font-bold flex items-center gap-0.5">
-                              <ShieldCheck size={9} /> Admin
+                              <ShieldCheck size={9} /> Akses Admin
                             </span>
                           ) : user ? (
                             <span className="text-blue-200 truncate">Mahasiswa</span>
@@ -920,7 +1222,7 @@ export default function AIBypassChat({
                       title="Buka Format & Template Perintah"
                     >
                       <LayoutTemplate size={13} />
-                      <span>{showTemplates ? 'Tutup Template' : 'Template'}</span>
+                      <span className="hidden xs:inline sm:inline">{showTemplates ? 'Tutup Format' : 'Format'}</span>
                     </button>
 
                     <button
@@ -1012,6 +1314,7 @@ export default function AIBypassChat({
                             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
                               {[
                                 { id: 'all', label: 'Semua' },
+                                { id: 'shortcuts', label: '⚡ Pintasan Fitur' },
                                 { id: 'jadwal', label: '📅 Jadwal' },
                                 { id: 'pengumuman', label: '📢 Pengumuman' },
                                 { id: 'notulensi', label: '📝 Notulensi' },
@@ -1116,6 +1419,55 @@ export default function AIBypassChat({
                                 <Sparkles size={13} />
                                 Jalankan Perintah AI
                               </button>
+                            </div>
+                          </div>
+                        ) : templateFilterCategory === 'shortcuts' ? (
+                          /* Direct Platform Feature Navigation Grid */
+                          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
+                            <div className="p-2 rounded-xl bg-gradient-to-r from-blue-600/10 to-indigo-600/10 border border-blue-500/20 text-blue-950 dark:text-blue-200 text-xs flex items-center gap-2">
+                              <Zap size={14} className="text-amber-500 shrink-0" />
+                              <p className="text-[10px] sm:text-[11px] font-medium">
+                                Klik tombol <strong>"Buka Halaman"</strong> untuk langsung berpindah ke fitur yang diinginkan secara instan tanpa error.
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {APP_FEATURES.map((feat) => {
+                                const FeatIcon = feat.icon;
+                                return (
+                                  <div
+                                    key={feat.id}
+                                    className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shadow-sm hover:border-blue-400/60 transition-all flex flex-col justify-between gap-2"
+                                  >
+                                    <div className="flex items-start gap-2.5">
+                                      <div className={`w-8 h-8 rounded-xl bg-gradient-to-tr ${feat.color} text-white flex items-center justify-center shrink-0 shadow-sm`}>
+                                        <FeatIcon size={16} />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-1">
+                                          <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                            {feat.label}
+                                          </h5>
+                                          <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                            {feat.badge}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2 mt-0.5">
+                                          {feat.description}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      onClick={() => handleNavigateToFeature(feat.id)}
+                                      className="w-full py-1.5 px-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[10px] sm:text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                                    >
+                                      <span>Buka {feat.label}</span>
+                                      <ChevronRight size={12} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         ) : (
@@ -1266,7 +1618,8 @@ export default function AIBypassChat({
                                 : 'bg-white dark:bg-[#1e293b] text-slate-800 dark:text-slate-100 rounded-bl-none border border-slate-200/70 dark:border-slate-700/60'
                             }`}
                           >
-                            <p className="whitespace-pre-wrap font-sans">{msg.text}</p>
+                            {/* Render text without raw asterisks */}
+                            <div>{formatBypassText(msg.text, msg.role === 'user')}</div>
 
                             {/* Template Code Suggestion from AI */}
                             {msg.templateCode && (
@@ -1300,6 +1653,23 @@ export default function AIBypassChat({
                               </div>
                             )}
 
+                            {/* Suggested Navigation Shortcut Card */}
+                            {msg.suggestedNavigation && (
+                              <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between gap-2">
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium truncate">
+                                  <Compass size={12} className="text-blue-500 shrink-0" />
+                                  <span>Pintasan Halaman:</span>
+                                </span>
+                                <button
+                                  onClick={() => handleNavigateToFeature(msg.suggestedNavigation!)}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95 shrink-0"
+                                >
+                                  <span>Buka {getFeatureMeta(msg.suggestedNavigation).label}</span>
+                                  <ChevronRight size={11} />
+                                </button>
+                              </div>
+                            )}
+
                             {/* Executed Action Cards */}
                             {msg.actions && msg.actions.length > 0 && (
                               <div className="mt-2.5 space-y-2 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
@@ -1325,6 +1695,7 @@ export default function AIBypassChat({
                                         {action.type === 'create_aspirasi' && <MessageSquare size={13} className="text-pink-500 shrink-0" />}
                                         {action.type === 'create_absen_table' && <Table size={13} className="text-indigo-500 shrink-0" />}
                                         {action.type === 'spin_wheel' && <RotateCw size={13} className="text-sky-500 shrink-0" />}
+                                        {action.type === 'navigate_to' && <Compass size={13} className="text-blue-500 shrink-0" />}
                                         <span className="truncate">{action.title || 'Aksi Otomatis'}</span>
                                       </div>
 
@@ -1359,74 +1730,72 @@ export default function AIBypassChat({
                                       </p>
                                     )}
 
-                                    {/* Action Buttons */}
+                                    {/* Action Navigation Buttons */}
                                     <div className="flex flex-wrap gap-1 mt-1.5">
                                       {action.status === 'success' && (
                                         <>
                                           {action.type === 'create_event' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('kalender');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('kalender')}
+                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Buka Kalender <ChevronRight size={11} />
                                             </button>
                                           )}
                                           {action.type === 'create_announcement' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('pengumuman');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('pengumuman')}
+                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Buka Pengumuman <ChevronRight size={11} />
                                             </button>
                                           )}
                                           {action.type === 'create_note' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('notulensi');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('notulensi')}
+                                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Buka Notulensi <ChevronRight size={11} />
                                             </button>
                                           )}
                                           {action.type === 'create_poll' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('voting');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('voting')}
+                                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Lihat Voting <ChevronRight size={11} />
                                             </button>
                                           )}
                                           {action.type === 'create_aspirasi' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('aspirasi');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('aspirasi')}
+                                              className="px-2.5 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Lihat Yapping Wall <ChevronRight size={11} />
                                             </button>
                                           )}
                                           {action.type === 'create_absen_table' && (
                                             <button
-                                              onClick={() => {
-                                                setActivePage('absen');
-                                                setIsOpen(false);
-                                              }}
-                                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all"
+                                              onClick={() => handleNavigateToFeature('absen')}
+                                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
                                             >
                                               Buka Absensi <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'spin_wheel' && (
+                                            <button
+                                              onClick={() => handleNavigateToFeature('spin')}
+                                              className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
+                                            >
+                                              Buka Spin Wheel <ChevronRight size={11} />
+                                            </button>
+                                          )}
+                                          {action.type === 'navigate_to' && (
+                                            <button
+                                              onClick={() => handleNavigateToFeature(action.payload?.page || msg.suggestedNavigation || 'home')}
+                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] sm:text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm active:scale-95"
+                                            >
+                                              Buka Halaman <ChevronRight size={11} />
                                             </button>
                                           )}
                                         </>
@@ -1476,7 +1845,7 @@ export default function AIBypassChat({
                           </div>
                         </div>
 
-                        {/* Quick suggestion pills from AI */}
+                        {/* Quick suggestion pills from AI with safe direct navigation support */}
                         {msg.quickSuggestions && msg.quickSuggestions.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5 pl-8">
                             {msg.quickSuggestions.map((sug, i) => (
@@ -1486,7 +1855,12 @@ export default function AIBypassChat({
                                   if (sug.includes('Template')) {
                                     setShowTemplates(true);
                                   } else {
-                                    handleSendMessage(sug);
+                                    const navTarget = isDirectNavigationSuggestion(sug);
+                                    if (navTarget && navTarget !== 'home') {
+                                      handleNavigateToFeature(navTarget);
+                                    } else {
+                                      handleSendMessage(sug);
+                                    }
                                   }
                                 }}
                                 className="px-2 py-1 rounded-full text-[10px] sm:text-[11px] font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all text-left flex items-center gap-1"
@@ -1523,15 +1897,31 @@ export default function AIBypassChat({
                       <LayoutTemplate size={12} />
                       <span>{showTemplates ? 'Tutup Template' : '📋 Template Format'}</span>
                     </button>
-                    {PRESET_TEMPLATES.slice(0, 4).map((tpl) => (
-                      <button
-                        key={tpl.id}
-                        onClick={() => handleSendMessage(tpl.samplePrompt)}
-                        className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all shrink-0"
-                      >
-                        {tpl.category}
-                      </button>
-                    ))}
+                    
+                    <button
+                      onClick={() => {
+                        setShowTemplates(true);
+                        setTemplateFilterCategory('shortcuts');
+                      }}
+                      className="px-2 py-1 rounded-lg text-[10px] sm:text-xs bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 font-bold transition-all shrink-0 flex items-center gap-1"
+                    >
+                      <Zap size={11} className="text-amber-500" />
+                      <span>Pintasan Fitur</span>
+                    </button>
+
+                    {APP_FEATURES.slice(0, 6).map((feat) => {
+                      const FeatIcon = feat.icon;
+                      return (
+                        <button
+                          key={feat.id}
+                          onClick={() => handleNavigateToFeature(feat.id)}
+                          className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all shrink-0 flex items-center gap-1"
+                        >
+                          <FeatIcon size={11} />
+                          <span>{feat.label.split(' ')[0]}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

@@ -682,6 +682,7 @@ ATURAN WEWENANG (PERMISSIONS) & TEMPLATE PANDUAN:
 - Jika pengguna meminta aksi yang memerlukan Admin (misal create_announcement) namun pengguna BUKAN admin, masukkan tetap action tersebut dengan requiresAdmin: true, dan jelaskan di 'reply' dengan sopan bahwa fitur pengumuman publik memerlukan hak akses Admin/Pengurus kelas dan sistem akan meminta PIN Admin jika disetujui.
 - Jika pengguna belum login, beri tahu bahwa aksi akan dijalankan setelah login Google sekali klik.
 - Jika pengguna hanya bertanya (misal "siapa saja pengurus kelas?", "apa materi HI besok?", "ada tugas apa?"), jawab dengan informatif dan ramah tanpa perlu membuat action yang tidak diminta.
+- Hindari menyisipkan simbol asterisk liar (*) atau tag markdown rumit di dalam teks 'reply'. Gunakan kalimat natural dan jelas.
 
 FORMAT KELUARAN (STRICT JSON ONLY):
 Wajib menghasilkan output format JSON murni tanpa pembungkus markdown code block:
@@ -706,9 +707,9 @@ Wajib menghasilkan output format JSON murni tanpa pembungkus markdown code block
   "suggestedNavigation": "kalender",
   "templateCode": "[Jadwal]\nJudul: Ujian Akhir Semester\nTanggal: 2026-08-28\nJam: 08:00 - 10:00 WIB\nKategori: uts\nKeterangan: Ruang B304",
   "quickSuggestions": [
-    "Lihat jadwal di Kalender",
-    "Bikin pengumuman terkait ujian ini",
-    "Lihat Template Perintah"
+    "Buka Kalender",
+    "Bikin pengumuman resmi",
+    "Buka Template Format"
   ]
 }`;
 
