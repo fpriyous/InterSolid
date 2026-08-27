@@ -11,6 +11,8 @@ import {
   Sun, 
   Moon,
   ChevronRight,
+  ChevronDown,
+  MoreHorizontal,
   ShieldCheck,
   ShieldAlert,
   ArrowLeft,
@@ -68,19 +70,27 @@ interface MenuItem {
   description: string;
 }
 
-const MENU_ITEMS: MenuItem[] = [
+const PRIMARY_MENU_ITEMS: MenuItem[] = [
   { id: 'home', label: 'Dashboard', icon: LayoutGrid, description: 'Monitor class activities and analytics in real-time.' },
   { id: 'kalender', label: 'Calendar', icon: Calendar, description: 'Manage and coordinate class schedules.' },
+  { id: 'study', label: 'Auto Paham', icon: Sparkles, description: 'Consult with our dedicated AI Hubungan Internasional tutor.' },
   { id: 'notulensi', label: 'Notes', icon: FileText, description: 'Record minutes of meetings and class notes.' },
   { id: 'aspirasi', label: 'Yapping', icon: MessageSquare, description: 'Submit anonymous suggestions and questions.' },
-  { id: 'study', label: 'Auto Paham', icon: Sparkles, description: 'Consult with our dedicated AI Hubungan Internasional tutor.' },
+  { id: 'pengumuman', label: 'Announce', icon: Bell, description: 'Broadcast updates and alerts to everyone.' },
+];
+
+const MORE_MENU_ITEMS: MenuItem[] = [
+  { id: 'memory', label: 'Memo Galeri', icon: ImageIcon, description: 'Preserve and share visual highlights of our journey.' },
   { id: 'profiles', label: 'Video Profile', icon: Video, description: 'Browse and upload 10-second student perkenalan video profiles.' },
   { id: 'interlingo', label: 'InterLingo', icon: Trophy, description: 'Gamified mini-class to master simple Mandarin vocabulary.' },
-  { id: 'pengumuman', label: 'Announcements', icon: Bell, description: 'Broadcast updates and alerts to everyone.' },
-  { id: 'memory', label: 'Memo', icon: ImageIcon, description: 'Preserve and share visual highlights of our journey.' },
-  { id: 'absen', label: 'Data', icon: CheckCircle, description: 'Track digital checklists, attendance, and dues.' },
-  { id: 'voting', label: 'Vote', icon: Vote, description: 'Host real-time polls and digital ballots.' },
+  { id: 'absen', label: 'Data & Absen', icon: CheckCircle, description: 'Track digital checklists, attendance, and dues.' },
+  { id: 'voting', label: 'Vote & Poll', icon: Vote, description: 'Host real-time polls and digital ballots.' },
   { id: 'spin', label: 'Spin Wheel', icon: RotateCw, description: 'Pick random class members or divide groups.' },
+];
+
+const MENU_ITEMS: MenuItem[] = [
+  ...PRIMARY_MENU_ITEMS,
+  ...MORE_MENU_ITEMS
 ];
 
 const ADMIN_PIN = '313';
@@ -88,10 +98,12 @@ const ADMIN_PIN = '313';
 export default function App() {
   const [activePage, setActivePage] = useState<MenuId>('home');
   const [targetId, setTargetId] = useState<string | null>(null);
+  const [isMoreDropdownOpen, setIsMoreDropdownOpen] = useState(false);
 
   const navigateToPage = (page: string, id: string | null = null) => {
     setActivePage(page);
     setTargetId(id);
+    setIsMoreDropdownOpen(false);
   };
   const [user, setUser] = useState<User | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -329,66 +341,134 @@ export default function App() {
 
         <div className="flex items-center gap-2">
           <nav className="hidden md:flex items-center gap-1">
-            {MENU_ITEMS.map((item) => (
+            {PRIMARY_MENU_ITEMS.map((item) => (
               <button
                 key={item.id}
                 onClick={() => navigateToPage(item.id)}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
+                className={`px-2.5 lg:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                   activePage === item.id 
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
-                    : 'text-[#6b7d91] hover:bg-gray-100 dark:hover:bg-gray-800'
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold shadow-sm' 
+                    : 'text-[#6b7d91] hover:bg-gray-100 dark:hover:bg-gray-800/80 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
-                <item.icon size={16} />
-                {item.label}
+                <item.icon size={15} />
+                <span>{item.label}</span>
               </button>
             ))}
-            <div className="h-6 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
+
+            {/* More Menu Dropdown for Laptop & Desktop */}
+            <div className="relative">
+              <button
+                onClick={() => setIsMoreDropdownOpen(prev => !prev)}
+                className={`px-2.5 lg:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  MORE_MENU_ITEMS.some(m => m.id === activePage)
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold'
+                    : isMoreDropdownOpen 
+                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' 
+                      : 'text-[#6b7d91] hover:bg-gray-100 dark:hover:bg-gray-800/80'
+                }`}
+              >
+                <MoreHorizontal size={15} />
+                <span>Fitur</span>
+                {MORE_MENU_ITEMS.some(m => m.id === activePage) && (
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                )}
+                <ChevronDown size={13} className={`transition-transform duration-200 ${isMoreDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence>
+                {isMoreDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setIsMoreDropdownOpen(false)} 
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#141e26] rounded-2xl shadow-2xl border border-blue-100 dark:border-blue-900/30 p-2 z-50 overflow-hidden"
+                    >
+                      <div className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-gray-100 dark:border-gray-800 mb-1">
+                        Fitur Tambahan
+                      </div>
+                      <div className="space-y-0.5">
+                        {MORE_MENU_ITEMS.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => navigateToPage(item.id)}
+                            className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-between text-left ${
+                              activePage === item.id
+                                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-bold'
+                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`p-1.5 rounded-lg ${activePage === item.id ? 'bg-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                <item.icon size={14} />
+                              </div>
+                              <span>{item.label}</span>
+                            </div>
+                            {activePage === item.id && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="h-5 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
+            
             <button 
               onClick={() => effectiveAdmin ? (isDewa ? null : setIsAdmin(false)) : setShowPinModal(true)}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                 effectiveAdmin 
                   ? (isDewa ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400') 
                   : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
               title={isDewa ? "Dewa Access Active" : effectiveAdmin ? "Admin Access Active" : "Unlock Admin Access"}
             >
-              {effectiveAdmin ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
+              {effectiveAdmin ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />}
             </button>
             
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               title="Switch Theme"
             >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+              {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
             </button>
             
-            <div className="h-6 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
+            <div className="h-5 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
             
             {user ? (
-              <div className="flex items-center gap-3 ml-2">
+              <div className="flex items-center gap-2 ml-1">
                 <img 
                   src={user.photoURL || ''} 
                   alt={user.displayName || ''} 
-                  className="w-8 h-8 rounded-full border border-blue-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all" 
+                  className="w-7 h-7 rounded-full border border-blue-200 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all" 
                   onClick={handleLogout}
                   title="Click to Logout"
                 />
                 <button 
                   onClick={handleLogout}
-                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
                   title="Logout"
                 >
-                  <LogOut size={18} />
+                  <LogOut size={16} />
                 </button>
               </div>
             ) : (
               <button 
                 onClick={handleLogin}
-                className="ml-2 px-4 py-2 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
+                className="ml-1 px-3 py-1.5 bg-blue-500 text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-all flex items-center gap-1.5 shrink-0"
               >
-                <UserIcon size={14} /> Login with Google
+                <UserIcon size={13} /> Login
               </button>
             )}
           </nav>
@@ -416,7 +496,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-[1160px] mx-auto p-4 md:p-8 pb-32 md:pb-8 relative z-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6 pb-28 md:pb-8 relative z-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={activePage}
