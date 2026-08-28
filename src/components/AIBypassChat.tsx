@@ -557,13 +557,13 @@ export default function AIBypassChat({
       {
         id: 'welcome-1',
         role: 'assistant',
-        text: 'Halo! Aku **InterBypass AI**, asisten eksekutor otomatis portal InterSolid. Kamu bisa memerintahkan apa saja lewat obrolan teks bebas, atau gunakan **Template Perintah** di atas agar parameternya rapi dan jelas!',
+        text: 'Halo! Aku **InterBypass AI**, Copilot eksekutor cerdas portal InterSolid. Kamu bisa memerintahkan apa saja langsung dengan **bahasa santai sehari-hari tanpa template** (misal: *"Catat besok ada kuis HI jam 9 di R301"*, *"Buatkan voting lokasi makrab"*, *"Umumin kuliah pindah ke Jumat"*). Sistem akan otomatis mengeksekusi langsung ke database dan UI!',
         timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         quickSuggestions: [
-          '📋 Buka Template Perintah',
-          '📅 Buka Kalender',
-          '📢 Bikin pengumuman resmi',
-          '🗳️ Buat voting lokasi makrab'
+          '📅 Catat kuis HI besok jam 9 di R301',
+          '🗳️ Buat voting lokasi makrab: Pantai, Villa, Kafe',
+          '📢 Umumin kuliah diplomasi pindah ke Jumat',
+          '📝 Catat hasil rapat proker baksos'
         ]
       }
     ];
@@ -921,17 +921,25 @@ export default function AIBypassChat({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: updatedMessages.map(m => ({
-            role: m.role,
-            content: m.text
-          })),
+          messages: updatedMessages.map(m => {
+            let content = m.text;
+            if (m.role === 'assistant' && m.actions && m.actions.length > 0) {
+              const actionSummary = m.actions.map(a => `[Aksi Terdaftar: ${a.type}, Judul: "${a.title || a.payload?.title || a.payload?.name || ''}", Payload: ${JSON.stringify(a.payload || {})}]`).join('; ');
+              content = `${content}\n\n(Catatan Konteks Aksi: ${actionSummary})`;
+            }
+            return {
+              role: m.role,
+              content
+            };
+          }),
           userContext: {
             isLoggedIn: !!user,
             isAdmin: isAdmin,
             isDewa: isDewa,
             userName: user?.displayName || 'Mahasiswa InterSolid',
             userEmail: user?.email || '',
-            userId: user?.uid || ''
+            userId: user?.uid || '',
+            currentActivePage: activePage
           },
           currentDateTime: new Date().toISOString()
         })
@@ -1940,7 +1948,7 @@ export default function AIBypassChat({
                         type="text"
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
-                        placeholder={isListening ? 'Mendengarkan suara...' : 'Ketik perintah atau gunakan template...'}
+                        placeholder={isListening ? 'Mendengarkan suara...' : 'Ketik perintah bebas (contoh: "catat kuis HI besok jam 9")...'}
                         disabled={isLoading}
                         className={`w-full py-2.5 pl-3.5 pr-9 text-xs sm:text-sm bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl sm:rounded-2xl border ${
                           isListening

@@ -56,6 +56,9 @@ const KNOWLEDGE_CATEGORIES = [
   "Lain-lain"
 ];
 
+const MAX_KNOWLEDGE_FILE_SIZE_MB = 25; // 25 MB
+const MAX_KNOWLEDGE_FILE_SIZE_BYTES = MAX_KNOWLEDGE_FILE_SIZE_MB * 1024 * 1024;
+
 const PERSONALITIES = [
   {
     id: 'default',
@@ -99,6 +102,7 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
   const [formError, setFormError] = useState('');
   const [submittingKnowledge, setSubmittingKnowledge] = useState(false);
   const [isParsingFile, setIsParsingFile] = useState(false);
+  const [parseProgressText, setParseProgressText] = useState('');
 
   // Selected article for viewing modal
   const [activeKnowledgeItem, setActiveKnowledgeItem] = useState<KnowledgeItem | null>(null);
@@ -273,37 +277,51 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
     }
   };
 
-  // 5.5 Handle PDF/TXT file upload & text extraction
+  // 5.5 Handle PDF/TXT file upload & text extraction (Without page limits, constrained only by file size)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setFormError('');
+
+    // 1. Validate File Size (Strict 25 MB Limit)
+    if (file.size > MAX_KNOWLEDGE_FILE_SIZE_BYTES) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      setFormError(`Ukuran file "${file.name}" (${fileSizeMB} MB) melebihi batas maksimal ${MAX_KNOWLEDGE_FILE_SIZE_MB} MB. Harap unggah file dengan ukuran lebih ringkas.`);
+      e.target.value = '';
+      return;
+    }
+
     setIsParsingFile(true);
+    setParseProgressText('Mempersiapkan dokumen...');
 
     try {
       // Handle plain text files
       if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        setParseProgressText('Membaca file teks...');
         const reader = new FileReader();
         reader.onload = (event) => {
-          const text = event.target?.result as string;
+          const text = (event.target?.result as string) || '';
           setNewContent(text);
           if (!newTitle) {
             const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
             setNewTitle(titleWithoutExt);
           }
           setIsParsingFile(false);
+          setParseProgressText('');
         };
         reader.onerror = () => {
           setFormError("Gagal membaca file teks.");
           setIsParsingFile(false);
+          setParseProgressText('');
         };
         reader.readAsText(file);
         return;
       }
 
-      // Handle PDF files
+      // Handle PDF files (Extract all pages regardless of count)
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        setParseProgressText('Memuat modul ekstraksi PDF...');
         if (!(window as any).pdfjsLib) {
           const script = document.createElement('script');
           script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -322,36 +340,47 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
             const typedarray = new Uint8Array(event.target?.result as ArrayBuffer);
             const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
             
+            const totalPages = pdf.numPages;
             let extractedText = '';
-            const maxPages = Math.min(pdf.numPages, 30);
             
-            for (let i = 1; i <= maxPages; i++) {
+            // Extract ALL pages without any artificial page cap
+            for (let i = 1; i <= totalPages; i++) {
+              setParseProgressText(`Mengekstrak halaman ${i} dari ${totalPages}...`);
               const page = await pdf.getPage(i);
               const textContent = await page.getTextContent();
               const pageText = textContent.items.map((item: any) => item.str).join(' ');
-              extractedText += pageText + '\n\n';
+              if (pageText.trim()) {
+                extractedText += `--- Halaman ${i} ---\n` + pageText.trim() + '\n\n';
+              }
             }
 
-            if (pdf.numPages > 30) {
-              extractedText += `\n\n... [Materi dipotong karena dokumen asli memiliki ${pdf.numPages} halaman. Batas ekstraksi adalah 30 halaman awal untuk menjaga kestabilan database]`;
+            const cleanContent = extractedText.trim();
+
+            if (!cleanContent) {
+              setFormError("Dokumen PDF berhasil dibuka tetapi tidak mengandung teks yang dapat diekstrak (kemungkinan file berupa gambar hasil scan tanpa OCR).");
+              setIsParsingFile(false);
+              setParseProgressText('');
+              return;
             }
 
-            setNewContent(extractedText.trim());
+            setNewContent(cleanContent);
             if (!newTitle) {
               const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
               setNewTitle(titleWithoutExt);
             }
-            logPortalActivity('study_companion', `Berhasil mengekstrak teks dari PDF "${file.name}"`, user);
+            logPortalActivity('study_companion', `Berhasil mengekstrak ${totalPages} halaman dari PDF "${file.name}"`, user);
           } catch (err: any) {
             console.error("Error reading PDF content:", err);
             setFormError(`Gagal mengekstrak konten PDF: ${err.message || 'Format tidak didukung'}`);
           } finally {
             setIsParsingFile(false);
+            setParseProgressText('');
           }
         };
         reader.onerror = () => {
           setFormError("Gagal membaca file PDF.");
           setIsParsingFile(false);
+          setParseProgressText('');
         };
         reader.readAsArrayBuffer(file);
         return;
@@ -359,10 +388,12 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
 
       setFormError("Format file tidak didukung. Harap unggah file PDF (.pdf) atau Teks (.txt) saja.");
       setIsParsingFile(false);
+      setParseProgressText('');
     } catch (err: any) {
       console.error("File upload error:", err);
       setFormError(`Gagal membaca file: ${err.message}`);
       setIsParsingFile(false);
+      setParseProgressText('');
     }
   };
 
@@ -521,15 +552,15 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
 
     try {
       // 🧠 Grounding Mechanism (RAG on Client side)
-      // We look for matching words in titles and content of our custom class curated Knowledge Database!
+      // We look for matching words in titles, categories, and deep content of our class curated Knowledge Database!
       const userTextLower = textToSend.toLowerCase();
       const matchedKnowledge = knowledgeItems.filter(item => {
-        // Simple keywords extraction
         const titleWords = item.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-        const hasKeywordMatch = titleWords.some(word => userTextLower.includes(word)) || 
-          item.category.toLowerCase().includes(userTextLower) ||
+        const hasTitleMatch = titleWords.some(word => userTextLower.includes(word)) || 
           userTextLower.includes(item.title.toLowerCase());
-        return hasKeywordMatch;
+        const hasCategoryMatch = item.category.toLowerCase().includes(userTextLower);
+        const hasContentMatch = userTextLower.length > 4 && item.content.toLowerCase().includes(userTextLower);
+        return hasTitleMatch || hasCategoryMatch || hasContentMatch;
       });
 
       // Pass the top 5 relevant class notes, or default to latest 3 class notes if nothing specific matched.
@@ -1222,14 +1253,16 @@ export default function StudyCompanion({ user, isAdmin }: { user: any; isAdmin: 
                         {isParsingFile ? (
                           <>
                             <Loader2 className="w-7 h-7 text-indigo-500 animate-spin" />
-                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">Mengekstrak isi dokumen...</span>
-                            <span className="text-[10px] text-gray-400">Teks PDF sedang dikonversi & diekstrak langsung ke kolom di bawah</span>
+                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
+                              {parseProgressText || 'Mengekstrak isi dokumen...'}
+                            </span>
+                            <span className="text-[10px] text-gray-400">Teks PDF sedang dikonversi & diekstrak tanpa batas halaman langsung ke kolom materi</span>
                           </>
                         ) : (
                           <>
                             <Upload className="w-7 h-7 text-indigo-400 group-hover:text-indigo-500 transition-colors" />
-                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">Punya PDF atau Teks Materi? Unggah di Sini</span>
-                            <span className="text-[10px] text-gray-400">Mendukung file .pdf atau .txt (Maksimal 30 halaman pertama)</span>
+                            <span className="text-xs font-bold text-gray-700 dark:text-gray-200">Punya PDF atau Teks Materi Kuliah? Unggah di Sini</span>
+                            <span className="text-[10px] text-gray-400">Mendukung file .pdf atau .txt (Tanpa batas halaman, Maksimal ukuran file 25 MB)</span>
                           </>
                         )}
                       </div>
