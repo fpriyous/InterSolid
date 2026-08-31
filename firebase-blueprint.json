@@ -201,6 +201,22 @@
       },
       "required": ["userId", "xp", "streak", "updatedAt"]
     },
+    "interlingo_cat_feeds": {
+      "title": "InterLingo Cat Feeding Record",
+      "description": "Leaderboard and feed tracking for cat mentors",
+      "type": "object",
+      "properties": {
+        "catId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "feedCount": { "type": "integer" },
+        "totalXpSpent": { "type": "integer" },
+        "lastDish": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["catId", "userId", "userName", "feedCount", "updatedAt"]
+    },
     "study_chats": {
       "title": "Study Chat Thread",
       "description": "Chat thread/session with the Auto Paham AI tutor",
@@ -260,6 +276,7 @@
     "table_activity": { "schema": "table_activity", "description": "Attendance table logs" },
     "video_profiles": { "schema": "video_profiles", "description": "Class members video profiles" },
     "interlingo_progress": { "schema": "interlingo_progress", "description": "Student language learning progress" },
+    "interlingo_cat_feeds": { "schema": "interlingo_cat_feeds", "description": "Cat mentor feeding leaderboard and interactions" },
     "study_chats": { "schema": "study_chats", "description": "AI Tutor chat sessions per user" },
     "study_knowledge": { "schema": "study_knowledge", "description": "Custom knowledge base for AI grounding" }
   }

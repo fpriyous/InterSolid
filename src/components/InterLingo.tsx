@@ -4,32 +4,61 @@ import {
   Award, BookOpen, CheckCircle, ShieldCheck, HelpCircle, ArrowRight, 
   RefreshCw, Star, Flame, Trophy, Lock, Play, ChevronRight, ChevronLeft,
   MessageSquare, Sparkles, Loader2, User, Volume2, Heart, Smile, Compass, 
-  Gift, Utensils, Clock
+  Gift, Utensils, Clock, Check, X, RotateCcw, Shuffle, Bookmark, 
+  Layers, VolumeX, Lightbulb, Globe, MapPin, 
+  Scale, FileText, CheckCircle2, AlertCircle, Info
 } from 'lucide-react';
 import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, setDoc, updateDoc, collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { LESSONS, CAT_MENTORS, CAT_MENTORS as MENTORS, CatMentor, Lesson, Question } from '../data/interlingo_data';
+import { 
+  LESSONS, 
+  CAT_MENTORS, 
+  TIERS, 
+  CatMentor, 
+  Lesson, 
+  Question, 
+  StudyCard, 
+  TheoryBrief, 
+  MatchingPair,
+  TTSLang 
+} from '../data/interlingo_data';
+import { CatCanteen } from './CatCanteen';
+import { speakDiplomaticSpeech } from '../lib/cat_audio_engine';
 
-// --- SOUNDBOARD CONTROLLER (Using Web Audio API) ---
-const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click' | 'jump' | 'whack' | 'pop' | 'alarm') => {
+// --- SOUNDBOARD CONTROLLER (Web Audio API) ---
+const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click' | 'flip' | 'alarm') => {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const now = ctx.currentTime;
     
     if (type === 'correct') {
+      // Pentatonic Chinese Imperial chime (Gong / Chime harmonic)
       const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
+      
       osc1.type = 'sine';
+      osc2.type = 'triangle';
       osc1.frequency.setValueAtTime(523.25, now); // C5
-      osc1.frequency.setValueAtTime(659.25, now + 0.1); // E5
-      osc1.frequency.setValueAtTime(783.99, now + 0.2); // G5
-      gain.gain.setValueAtTime(0.12, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      osc1.frequency.setValueAtTime(587.33, now + 0.08); // D5
+      osc1.frequency.setValueAtTime(659.25, now + 0.16); // E5
+      osc1.frequency.setValueAtTime(783.99, now + 0.24); // G5
+      osc1.frequency.setValueAtTime(880.00, now + 0.32); // A5
+
+      osc2.frequency.setValueAtTime(1046.50, now + 0.24); // C6 bell shimmer
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.005, now + 0.65);
+      
       osc1.connect(gain);
+      osc2.connect(gain);
       gain.connect(ctx.destination);
+      
       osc1.start(now);
-      osc1.stop(now + 0.45);
+      osc2.start(now + 0.2);
+      osc1.stop(now + 0.68);
+      osc2.stop(now + 0.68);
     } else if (type === 'incorrect') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -43,154 +72,69 @@ const playSound = (type: 'correct' | 'incorrect' | 'complete' | 'feed' | 'click'
       osc.start(now);
       osc.stop(now + 0.35);
     } else if (type === 'complete') {
-      const chord = [261.63, 329.63, 392.00, 523.25]; // Majestic C-Major chord
-      chord.forEach((freq, i) => {
+      // Grand Imperial Fanfare (Chinese Pentatonic G-A-C-D-E-G)
+      const pentatonic = [392.00, 440.00, 523.25, 587.33, 659.25, 783.99]; 
+      pentatonic.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, now + i * 0.08);
-        gain.gain.setValueAtTime(0.08, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
+        osc.frequency.setValueAtTime(freq, now + i * 0.09);
+        gain.gain.setValueAtTime(0.12, now + i * 0.09);
+        gain.gain.exponentialRampToValueAtTime(0.005, now + 1.1);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.75);
+        osc.start(now + i * 0.09);
+        osc.stop(now + 1.2);
       });
     } else if (type === 'feed') {
-      // Hilarious chewing/meowing synthesizer sounds
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
       
       osc1.type = 'triangle';
-      osc1.frequency.setValueAtTime(350, now);
-      osc1.frequency.linearRampToValueAtTime(550, now + 0.15);
-      osc1.frequency.linearRampToValueAtTime(450, now + 0.3);
+      osc1.frequency.setValueAtTime(392, now); // G4
+      osc1.frequency.linearRampToValueAtTime(659, now + 0.15); // E5
+      osc1.frequency.linearRampToValueAtTime(783, now + 0.3); // G5
       
       osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(700, now);
-      osc2.frequency.exponentialRampToValueAtTime(900, now + 0.3);
+      osc2.frequency.setValueAtTime(783, now);
+      osc2.frequency.exponentialRampToValueAtTime(1046, now + 0.3);
       
-      gain.gain.setValueAtTime(0.1, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
       
       osc1.connect(gain);
       osc2.connect(gain);
       gain.connect(ctx.destination);
       osc1.start(now);
       osc2.start(now);
-      osc1.stop(now + 0.35);
-      osc2.stop(now + 0.35);
-    } else if (type === 'click') {
+      osc1.stop(now + 0.4);
+      osc2.stop(now + 0.4);
+    } else if (type === 'click' || type === 'flip') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(600, now);
-      gain.gain.setValueAtTime(0.05, now);
+      osc.frequency.setValueAtTime(type === 'flip' ? 880 : 660, now);
+      gain.gain.setValueAtTime(0.06, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(now);
-      osc.stop(now + 0.09);
-    } else if (type === 'jump') {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(300, now);
-      osc.frequency.exponentialRampToValueAtTime(800, now + 0.25);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.26);
-    } else if (type === 'whack') {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.linearRampToValueAtTime(60, now + 0.15);
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.16);
-    } else if (type === 'pop') {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(900, now);
-      osc.frequency.setValueAtTime(1400, now + 0.05);
-      gain.gain.setValueAtTime(0.06, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.13);
+      osc.stop(now + 0.08);
     } else if (type === 'alarm') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(350, now);
-      gain.gain.setValueAtTime(0.04, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(880, now);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(now);
-      osc.stop(now + 0.09);
+      osc.stop(now + 0.1);
     }
-  } catch (err) {
-    console.warn("Web Audio API not allowed or supported yet:", err);
-  }
-};
-
-// --- AUDIBLE TTS MANDARIN PRONUNCIATION ---
-const speakMandarin = (text: string) => {
-  try {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      // Resume if speaking queue is stuck in paused state (common browser issue)
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-      
-      // Cancel previous speech to prevent overlapping
-      window.speechSynthesis.cancel();
-      
-      // Use a slight timeout (50ms) before speaking. 
-      // Direct synchronous speak after cancel often causes a silent block or failure in Chrome/Safari.
-      setTimeout(() => {
-        try {
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.lang = 'zh-CN';
-          utterance.rate = 0.82; // comfortable rate for learning
-          utterance.pitch = 1.1; // cute, animated tone
-          
-          // Get available voices and prefer a Chinese voice
-          const voices = window.speechSynthesis.getVoices();
-          const zhVoice = voices.find(v => v.lang.toLowerCase().includes('zh') || v.lang.toLowerCase().includes('cn'));
-          if (zhVoice) {
-            utterance.voice = zhVoice;
-          }
-          
-          utterance.onerror = (e) => {
-            console.warn("SpeechSynthesis error:", e.error);
-            // Resume to unblock speechSynthesis queue if paused
-            if (window.speechSynthesis.paused) {
-              window.speechSynthesis.resume();
-            }
-          };
-          
-          window.speechSynthesis.speak(utterance);
-        } catch (innerErr) {
-          console.warn("Error inside speech synthesis delay:", innerErr);
-        }
-      }, 50);
-    } else {
-      console.warn("Speech Synthesis not supported in this browser.");
-    }
-  } catch (err) {
-    console.error("Failed to execute speakMandarin:", err);
+  } catch (e) {
+    console.error("Audio Web API error:", e);
   }
 };
 
@@ -205,228 +149,232 @@ interface UserProgress {
   updatedAt: string;
 }
 
-// --- CUSTOM INTERACTIVE CAT MEME COMPONENT ---
+// Unified step in the interleaved lesson journey
+export type LessonStepType = 'briefing' | 'concept_card' | 'question';
+
+export interface LessonStep {
+  stepType: LessonStepType;
+  briefing?: TheoryBrief;
+  conceptCard?: StudyCard;
+  question?: Question;
+  stepIndex: number;
+}
+
+// Build interleaved queue of steps for a given lesson
+function buildInterleavedSteps(lesson: Lesson): LessonStep[] {
+  const steps: LessonStep[] = [];
+  let stepCounter = 0;
+
+  // 1. First Step: The Mentor's Theory & Siyasah Briefing
+  steps.push({
+    stepType: 'briefing',
+    briefing: lesson.theoryBrief,
+    stepIndex: stepCounter++
+  });
+
+  // 2. Interleave Study Cards with Practice Questions
+  const studyCards = lesson.studyCards || [];
+  const questions = lesson.questions || [];
+
+  let cardIdx = 0;
+  let qIdx = 0;
+
+  while (cardIdx < studyCards.length || qIdx < questions.length) {
+    // Insert a concept/study card if available
+    if (cardIdx < studyCards.length) {
+      steps.push({
+        stepType: 'concept_card',
+        conceptCard: studyCards[cardIdx],
+        stepIndex: stepCounter++
+      });
+      cardIdx++;
+    }
+
+    // Insert 1 or 2 matching practice questions right after
+    if (qIdx < questions.length) {
+      steps.push({
+        stepType: 'question',
+        question: questions[qIdx],
+        stepIndex: stepCounter++
+      });
+      qIdx++;
+    }
+  }
+
+  // If there are leftover questions (e.g. cumulative scenario dilemma or matching pairs at the end), add them
+  while (qIdx < questions.length) {
+    steps.push({
+      stepType: 'question',
+      question: questions[qIdx],
+      stepIndex: stepCounter++
+    });
+    qIdx++;
+  }
+
+  return steps;
+}
+
+// --- CHINESE DIPLOMATIC BANQUET DISHES ---
+const CHINESE_DIPLOMATIC_DISHES = [
+  {
+    id: 'jiaozi',
+    name: 'Jiaozi Diplomasi (外交水饺)',
+    desc: 'Pangsit simbol persahabatan bilateral & traktat',
+    icon: '🥟',
+    cost: 20,
+    voicePhrase: '谢谢你，这道外交水饺皮薄馅大，太好吃了！'
+  },
+  {
+    id: 'peking_duck',
+    name: 'Bebek Peking Kenegaraan (北京烤鸭)',
+    desc: 'Jamuan makan malam resmi Konferensi Tingkat Tinggi',
+    icon: '🦆',
+    cost: 30,
+    voicePhrase: '哇！北京烤鸭国宴佳肴，一言九鼎！'
+  },
+  {
+    id: 'mooncake',
+    name: 'Kue Bulan Traktat Damai (和平月饼)',
+    desc: 'Simbol keharmonisan & perdamaian abadi',
+    icon: '🥮',
+    cost: 20,
+    voicePhrase: '月圆人团圆，祝愿世界和平共处！'
+  },
+  {
+    id: 'longjing_tea',
+    name: 'Teh Hijau Longjing (西湖龙井茶)',
+    desc: 'Teh diplomasi perundingan bilateral meja bundar',
+    icon: '🍵',
+    cost: 15,
+    voicePhrase: '以茶会友，品味外交风范！'
+  },
+  {
+    id: 'dimsum',
+    name: 'Dim Sum Multilateral (多边点心)',
+    desc: 'Koleksi aneka dim sum sidang internasional',
+    icon: '🥢',
+    cost: 25,
+    voicePhrase: '多边合作点心，味道真是绝妙！'
+  },
+  {
+    id: 'longevity_noodles',
+    name: 'Mie Panjang Umur Hubungan (友谊长寿面)',
+    desc: 'Doa persahabatan diplomatik langgeng & harmonis',
+    icon: '🍜',
+    cost: 20,
+    voicePhrase: '友谊地久天长，长寿面太香了！'
+  }
+];
+
+// --- MENTOR CAT AVATAR COMPONENT ---
 function CatMemeAvatar({ 
   type, 
   imageUrl, 
-  alt = 'Cat Mentor', 
-  className = 'w-24 h-24',
-  pulse = false,
-  talking = false
+  className = "w-20 h-20", 
+  talking = false 
 }: { 
-  type: 'hat' | 'paw' | 'tongue' | 'cool' | 'rebel' | 'closeup'; 
+  type: string; 
   imageUrl: string; 
-  alt?: string;
-  className?: string;
-  pulse?: boolean;
-  talking?: boolean;
+  className?: string; 
+  talking?: boolean 
 }) {
   return (
-    <div className={`relative rounded-3xl overflow-hidden border-4 border-white dark:border-slate-800 shadow-xl bg-[#fef9f3] shrink-0 ${className} ${pulse ? 'ring-4 ring-orange-400/50' : ''}`}>
+    <div className={`relative ${className} rounded-3xl overflow-hidden border-2 border-red-500/40 shadow-xl bg-slate-950 shrink-0 group select-none ring-2 ring-amber-500/20`}>
       <img 
         src={imageUrl} 
-        alt={alt} 
-        className={`w-full h-full object-cover transition-all duration-500 ${
-          type === 'closeup' ? 'scale-115 hover:scale-125' : 'hover:scale-110'
-        } ${talking ? 'animate-[bounce_0.5s_infinite]' : ''}`}
+        alt="Diplomatic Cat Mentor" 
+        className={`w-full h-full object-cover transition-transform duration-500 ${
+          talking ? 'scale-110' : 'group-hover:scale-105'
+        }`}
         referrerPolicy="no-referrer"
       />
-      
-      {/* 1. Hat Overlay (The Explorer Cat) */}
+
+      {/* Diplomatic Chinese Traditional Badge / Seal */}
+      <div className="absolute top-1.5 right-1.5 bg-red-600/90 text-amber-300 font-serif font-black text-[7px] px-1.5 py-0.5 rounded border border-amber-400/40 shadow">
+        中
+      </div>
+
       {type === 'hat' && (
-        <div className="absolute top-0 inset-x-0 flex justify-center -translate-y-[15%] pointer-events-none">
-          <svg className="w-[82%] h-auto drop-shadow-[0_4px_6px_rgba(0,0,0,0.3)] animate-[bounce_1.5s_infinite]" viewBox="0 0 120 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 52 C10 46, 110 46, 110 52 C110 62, 10 62, 10 52 Z" fill="#b19470" />
-            <path d="M30 49 C30 15, 90 15, 90 49 Z" fill="#917c5d" />
-            <rect x="30" y="42" width="60" height="7" fill="#58432a" />
-            <circle cx="60" cy="45" r="4.5" fill="#ffd700" />
-          </svg>
+        <div className="absolute top-1.5 left-2 bg-gradient-to-r from-red-600 to-amber-600 text-white font-black text-[7px] px-2 py-0.5 rounded-full shadow pointer-events-none">
+          🏮 学者
         </div>
       )}
 
-      {/* 2. Paw Overlay (The Supportive Bilateral Cat) */}
       {type === 'paw' && (
-        <div className="absolute bottom-0 right-0 translate-x-[10%] translate-y-[10%] flex justify-end items-end pointer-events-none">
-          <svg className="w-[62%] h-auto drop-shadow-[0_4px_8px_rgba(0,0,0,0.35)] animate-[pulse_2s_infinite] origin-bottom-right rotate-[-12deg]" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M10 60 C23 20, 57 20, 70 60 L80 80 L0 80 Z" fill="#f8b16c" />
-            <path d="M10 60 C23 20, 57 20, 70 60 L80 80 L0 80 Z" fill="#fff" opacity="0.15" />
-            {/* Soft pink pads */}
-            <circle cx="40" cy="55" r="14" fill="#ffaab3" />
-            <circle cx="23" cy="36" r="6" fill="#ffaab3" />
-            <circle cx="40" cy="29" r="7" fill="#ffaab3" />
-            <circle cx="57" cy="36" r="6" fill="#ffaab3" />
-          </svg>
+        <div className="absolute bottom-1.5 left-2 bg-amber-500 text-slate-900 font-black text-[7px] px-2 py-0.5 rounded-full shadow pointer-events-none">
+          📜 大使
         </div>
       )}
 
-      {/* 3. Tongue Overlay (The Blep Cat) */}
       {type === 'tongue' && (
-        <div className="absolute bottom-[22%] left-[45%] -translate-x-1/2 flex justify-center pointer-events-none">
+        <div className="absolute bottom-2.5 inset-x-0 flex justify-center pointer-events-none">
           <motion.div 
-            animate={{ height: [12, 22, 12] }}
-            transition={{ repeat: Infinity, duration: 1.2 }}
-            className="w-4 h-5 bg-pink-400 rounded-b-full border-2 border-pink-500 shadow-md origin-top" 
+            animate={{ scaleY: [1, 1.4, 1] }} 
+            transition={{ repeat: Infinity, duration: 1.5 }}
+            className="w-4 h-5 bg-rose-400 rounded-b-full border-2 border-red-500 shadow-md origin-top" 
           />
         </div>
       )}
 
-      {/* 4. Cool Sunglasses & Cigarette (The Lobbyist Cat) */}
       {type === 'cool' && (
-        <>
-          <div className="absolute top-[38%] inset-x-0 flex justify-center pointer-events-none scale-110">
-            <div className="flex gap-1 items-center">
-              <div className="w-6 h-4 bg-slate-900 rounded-md border-t border-slate-600 shadow-md" />
-              <div className="w-2 h-0.5 bg-slate-900" />
-              <div className="w-6 h-4 bg-slate-900 rounded-md border-t border-slate-600 shadow-md" />
-            </div>
+        <div className="absolute top-[38%] inset-x-0 flex justify-center pointer-events-none scale-110">
+          <div className="flex gap-1 items-center">
+            <div className="w-6 h-4 bg-slate-950 rounded-md border-t border-amber-500 shadow-md" />
+            <div className="w-2 h-0.5 bg-amber-500" />
+            <div className="w-6 h-4 bg-slate-950 rounded-md border-t border-amber-500 shadow-md" />
           </div>
-          <div className="absolute bottom-[28%] left-[54%] origin-left rotate-[12deg] pointer-events-none">
-            <div className="w-8 h-1.5 bg-white rounded-r shadow border border-gray-200 flex justify-end">
-              <div className="w-2.5 h-full bg-amber-500 rounded-r-xs animate-pulse" />
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
-      {/* 5. Rebel Grumpy Markings (The Opposition Cat) */}
       {type === 'rebel' && (
-        <>
-          <div className="absolute top-[32%] inset-x-0 flex justify-around px-5 pointer-events-none">
-            <div className="w-5 h-1.5 bg-slate-900 rounded-full rotate-[22deg]" />
-            <div className="w-5 h-1.5 bg-slate-900 rounded-full -rotate-[22deg]" />
-          </div>
-          <div className="absolute bottom-2 left-2 bg-rose-500 text-white font-black text-[7px] px-1.5 py-0.5 rounded-full uppercase tracking-widest pointer-events-none shadow-md">
-            OPOSISI 😾
-          </div>
-        </>
+        <div className="absolute bottom-2 left-2 bg-red-700 text-amber-300 font-black text-[7px] px-2 py-0.5 rounded-full uppercase tracking-widest pointer-events-none shadow-md border border-amber-400/30">
+          VETO! 否决
+        </div>
       )}
 
-      {/* 6. Close Up Fish-Eye Distortion Grid (Shocked Humas Cat) */}
       {type === 'closeup' && (
-        <div className="absolute inset-0 border-4 border-dashed border-rose-500/50 rounded-2xl animate-[spin_8s_linear_infinite] pointer-events-none" />
+        <div className="absolute inset-0 border-4 border-dashed border-red-500/50 rounded-2xl animate-[spin_12s_linear_infinite] pointer-events-none" />
       )}
     </div>
   );
 }
 
 export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: boolean }) {
-  const [activeTab, setActiveTab] = useState<'map' | 'canteen'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'glossary' | 'canteen'>('map');
+  const [selectedTier, setSelectedTier] = useState<number | 'all'>('all');
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [leaderboard, setLeaderboard] = useState<UserProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Active Lesson Context (Interleaved Step Engine)
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
-  
-  // Quiz Flow States
-  const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
+  const [steps, setSteps] = useState<LessonStep[]>([]);
+  const [currentStepIdx, setCurrentStepIdx] = useState(0);
+
+  // Step-specific Interactive States
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [lessonComplete, setLessonComplete] = useState(false);
-  const [loading, setLoading] = useState(true);
-  
-  // Custom Particle/Feed States
+  const [lives, setLives] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [isTimeUp, setIsTimeUp] = useState(false);
+
+  // Sentence Builder State
+  const [assembledTokens, setAssembledTokens] = useState<string[]>([]);
+  const [availableTokens, setAvailableTokens] = useState<string[]>([]);
+
+  // Matching Pairs State
+  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
+  const [matchedPairs, setMatchedPairs] = useState<{ [left: string]: string }>({});
+  const [shuffledRights, setShuffledRights] = useState<string[]>([]);
+
+  // Feeding & XP deduction
   const [fedCatId, setFedCatId] = useState<string | null>(null);
   const [feedingBubble, setFeedingBubble] = useState<string | null>(null);
   const [xpDeductionAnim, setXpDeductionAnim] = useState(false);
 
-  // RPG Gameplay & Arcade States
-  const [lives, setLives] = useState(3);
-  const [timeLeft, setTimeLeft] = useState(25);
-  const [gameplayMode, setGameplayMode] = useState<'classic' | 'jumper' | 'whack' | 'catcher'>('classic');
-  const [jumperCatPos, setJumperCatPos] = useState<number | null>(null);
-  const [whackHammerPos, setWhackHammerPos] = useState<number | null>(null);
-  const [isTimeUp, setIsTimeUp] = useState(false);
-  const [bubbles, setBubbles] = useState<any[]>([]);
-
-  // Get dynamic mode per question
-  const getModeForIndex = (index: number): 'classic' | 'jumper' | 'whack' | 'catcher' => {
-    const modes: ('classic' | 'jumper' | 'whack' | 'catcher')[] = ['jumper', 'whack', 'catcher', 'classic'];
-    return modes[index % modes.length];
-  };
-
-  // Initialize bubble drift items
-  const initBubbles = (question: Question) => {
-    const list = question.options.map((opt, i) => {
-      return {
-        id: i,
-        idx: i,
-        text: opt,
-        x: 5 + Math.random() * 55, // safe % range to avoid overflowing box sides
-        y: 15 + Math.random() * 45,
-        vx: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.8),
-        vy: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.8)
-      };
-    });
-    setBubbles(list);
-  };
-
-  // Bubble floating loop
-  useEffect(() => {
-    if (gameplayMode !== 'catcher' || isAnswered || !activeLesson || lessonComplete || lives <= 0) {
-      return;
-    }
-    
-    const interval = setInterval(() => {
-      setBubbles((prev) => 
-        prev.map((b) => {
-          let newX = b.x + b.vx;
-          let newY = b.y + b.vy;
-          let newVx = b.vx;
-          let newVy = b.vy;
-          
-          if (newX < 2 || newX > 62) {
-            newVx = -b.vx;
-            newX = Math.max(2, Math.min(62, newX));
-          }
-          if (newY < 5 || newY > 65) {
-            newVy = -b.vy;
-            newY = Math.max(5, Math.min(65, newY));
-          }
-          
-          return {
-            ...b,
-            x: newX,
-            y: newY,
-            vx: newVx,
-            vy: newVy
-          };
-        })
-      );
-    }, 45);
-    
-    return () => clearInterval(interval);
-  }, [gameplayMode, isAnswered, activeLesson, lessonComplete, lives]);
-
-  // Countdown timer clock
-  useEffect(() => {
-    if (!activeLesson || lessonComplete || lives <= 0 || isAnswered) {
-      return;
-    }
-
-    const timerInterval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerInterval);
-          handleTimeUp();
-          return 0;
-        }
-        if (prev <= 6) {
-          playSound('alarm');
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timerInterval);
-  }, [activeLesson, currentQuestionIdx, isAnswered, lessonComplete, lives]);
-
-  const handleTimeUp = () => {
-    setIsTimeUp(true);
-    setIsAnswered(true);
-    playSound('incorrect');
-    setLives((prev) => Math.max(0, prev - 1));
-  };
-
-  // Load progress & leaderboard from Firestore (Durable Cloud Persistence)
+  // Load progress & leaderboard from Firestore
   useEffect(() => {
     if (!user) {
       setLoading(false);
@@ -448,9 +396,9 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
       } else {
         const defaultProg: UserProgress = {
           userId: user.uid,
-          userName: user.displayName || 'Solidaritas Anonim',
+          userName: user.displayName || 'Diplomat Muda',
           userPhoto: user.photoURL || undefined,
-          xp: 20, // Start with 20 XP so they can immediately test the canteen if they want!
+          xp: 30, // Starter XP
           streak: 0,
           lastActiveDate: '',
           completedLessons: [],
@@ -471,138 +419,176 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     };
   }, [user]);
 
-  // --- HANDLERS ---
-  const handleStartLesson = (lesson: Lesson) => {
+  // Current Step helper
+  const currentStep = steps[currentStepIdx];
+
+  // Helper to initialize question-specific sub-states
+  const initStepState = (step: LessonStep) => {
+    setSelectedOption(null);
+    setIsAnswered(false);
+    setIsTimeUp(false);
+    setTimeLeft(30);
+
+    if (step.stepType === 'concept_card' && step.conceptCard) {
+      speakDiplomaticSpeech(step.conceptCard.audioText, step.conceptCard.audioLang);
+    } else if (step.stepType === 'question' && step.question) {
+      const q = step.question;
+      if (q.type === 'sentence_builder' && q.wordTokens) {
+        const shuffled = [...q.wordTokens].sort(() => Math.random() - 0.5);
+        setAvailableTokens(shuffled);
+        setAssembledTokens([]);
+      } else if (q.type === 'matching' && q.matchingPairs) {
+        setMatchedPairs({});
+        setSelectedLeft(null);
+        const rights = q.matchingPairs.map(p => p.right).sort(() => Math.random() - 0.5);
+        setShuffledRights(rights);
+      }
+    }
+  };
+
+  // Timer Clock for Question Steps
+  useEffect(() => {
+    if (!activeLesson || !currentStep || currentStep.stepType !== 'question' || lessonComplete || lives <= 0 || isAnswered) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleTimeUp();
+          return 0;
+        }
+        if (prev <= 5) {
+          playSound('alarm');
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [activeLesson, currentStepIdx, isAnswered, lessonComplete, lives]);
+
+  const handleTimeUp = () => {
+    setIsTimeUp(true);
+    setIsAnswered(true);
+    playSound('incorrect');
+    setLives((prev) => Math.max(0, prev - 1));
+  };
+
+  // Start Unified Lesson Journey
+  const handleOpenLesson = (lesson: Lesson) => {
     playSound('click');
     setPreviewLesson(null);
     setActiveLesson(lesson);
-    setCurrentQuestionIdx(0);
-    setSelectedOption(null);
-    setIsAnswered(false);
-    setLessonComplete(false);
+    const lessonSteps = buildInterleavedSteps(lesson);
+    setSteps(lessonSteps);
+    setCurrentStepIdx(0);
     setLives(3);
-    setTimeLeft(25);
-    setIsTimeUp(false);
-    setJumperCatPos(null);
-    setWhackHammerPos(null);
+    setLessonComplete(false);
     
-    const initialMode = getModeForIndex(0);
-    setGameplayMode(initialMode);
-    if (initialMode === 'catcher') {
-      initBubbles(lesson.questions[0]);
+    if (lessonSteps.length > 0) {
+      initStepState(lessonSteps[0]);
     }
-    
-    // Announce lesson start in speech
-    setTimeout(() => {
-      speakMandarin("你好");
-    }, 400);
   };
 
-  const handleOptionClick = (idx: number) => {
+  // Answer multiple choice / scenario / listening
+  const handleSelectOption = (optIdx: number) => {
+    if (isAnswered || !currentStep || currentStep.stepType !== 'question' || !currentStep.question) return;
+    playSound('click');
+    setSelectedOption(optIdx);
+    setIsAnswered(true);
+
+    const question = currentStep.question;
+    const isCorrect = question.type === 'true_false' 
+      ? (optIdx === 0 ? question.isTrue === true : question.isTrue === false)
+      : question.correctAnswer === optIdx;
+
+    if (isCorrect) {
+      playSound('correct');
+      if (question.audioText) {
+        speakDiplomaticSpeech(question.audioText, question.audioLang || 'ar-SA');
+      }
+    } else {
+      playSound('incorrect');
+      setLives((prev) => Math.max(0, prev - 1));
+    }
+  };
+
+  // Sentence Builder Token Interactions
+  const handleAddToken = (token: string, tokenIdx: number) => {
     if (isAnswered) return;
     playSound('click');
-    setSelectedOption(idx);
+    setAssembledTokens(prev => [...prev, token]);
+    setAvailableTokens(prev => prev.filter((_, idx) => idx !== tokenIdx));
+  };
+
+  const handleRemoveToken = (token: string, tokenIdx: number) => {
+    if (isAnswered) return;
+    playSound('click');
+    setAvailableTokens(prev => [...prev, token]);
+    setAssembledTokens(prev => prev.filter((_, idx) => idx !== tokenIdx));
+  };
+
+  const handleCheckSentence = () => {
+    if (isAnswered || !currentStep || !currentStep.question) return;
+    const question = currentStep.question;
+    if (!question.correctOrder) return;
+
+    const isCorrect = JSON.stringify(assembledTokens) === JSON.stringify(question.correctOrder);
     setIsAnswered(true);
-    
-    const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
+
     if (isCorrect) {
       playSound('correct');
-      const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
-      if (pronunciationText) {
-        speakMandarin(pronunciationText);
+      if (question.audioText) {
+        speakDiplomaticSpeech(question.audioText, question.audioLang || 'ar-SA');
       }
     } else {
       playSound('incorrect');
-      setLives((prev) => Math.max(0, prev - 1));
+      setLives(prev => Math.max(0, prev - 1));
     }
   };
 
-  const handleJumperLeap = (idx: number) => {
+  // Matching Pairs Interactions
+  const handleSelectLeftPair = (leftText: string) => {
     if (isAnswered) return;
-    playSound('jump');
-    setJumperCatPos(idx);
-    
-    setTimeout(() => {
-      setSelectedOption(idx);
-      setIsAnswered(true);
-      const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
-      if (isCorrect) {
-        playSound('correct');
-        const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
-        if (pronunciationText) {
-          speakMandarin(pronunciationText);
-        }
-      } else {
-        playSound('incorrect');
-        setLives((prev) => Math.max(0, prev - 1));
-      }
-    }, 750);
+    playSound('click');
+    setSelectedLeft(leftText);
   };
 
-  const handleWhackMole = (idx: number) => {
-    if (isAnswered) return;
-    playSound('whack');
-    setWhackHammerPos(idx);
+  const handleSelectRightPair = (rightText: string) => {
+    if (isAnswered || !selectedLeft || !currentStep || !currentStep.question) return;
+    playSound('click');
     
-    setTimeout(() => {
-      setSelectedOption(idx);
-      setIsAnswered(true);
-      const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
-      if (isCorrect) {
-        playSound('correct');
-        const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
-        if (pronunciationText) {
-          speakMandarin(pronunciationText);
-        }
-      } else {
-        playSound('incorrect');
-        setLives((prev) => Math.max(0, prev - 1));
-      }
-    }, 350);
-  };
+    const question = currentStep.question;
+    const pair = question.matchingPairs?.find(p => p.left === selectedLeft);
 
-  const handlePopBubble = (idx: number) => {
-    if (isAnswered) return;
-    playSound('pop');
-    setSelectedOption(idx);
-    setIsAnswered(true);
-    
-    const isCorrect = activeLesson!.questions[currentQuestionIdx].correctAnswer === idx;
-    if (isCorrect) {
+    if (pair && pair.right === rightText) {
       playSound('correct');
-      const pronunciationText = activeLesson!.questions[currentQuestionIdx].audioText;
-      if (pronunciationText) {
-        speakMandarin(pronunciationText);
+      const newMatched = { ...matchedPairs, [selectedLeft]: rightText };
+      setMatchedPairs(newMatched);
+      setSelectedLeft(null);
+
+      // Check if all matched
+      if (Object.keys(newMatched).length === question.matchingPairs?.length) {
+        setIsAnswered(true);
       }
     } else {
       playSound('incorrect');
-      setLives((prev) => Math.max(0, prev - 1));
+      setLives(prev => Math.max(0, prev - 1));
+      setSelectedLeft(null);
     }
   };
 
-  const handleVerifyAnswer = () => {
-    // Verified automatically
-  };
-
-  const handleNextQuestion = () => {
+  // Next Step in Unified Journey
+  const handleNextStep = () => {
     playSound('click');
     if (!activeLesson) return;
-    
-    if (currentQuestionIdx < activeLesson.questions.length - 1) {
-      const nextIdx = currentQuestionIdx + 1;
-      setCurrentQuestionIdx(nextIdx);
-      setSelectedOption(null);
-      setIsAnswered(false);
-      setIsTimeUp(false);
-      setTimeLeft(25);
-      setJumperCatPos(null);
-      setWhackHammerPos(null);
-      
-      const nextMode = getModeForIndex(nextIdx);
-      setGameplayMode(nextMode);
-      if (nextMode === 'catcher') {
-        initBubbles(activeLesson.questions[nextIdx]);
-      }
+
+    if (currentStepIdx < steps.length - 1) {
+      const nextIdx = currentStepIdx + 1;
+      setCurrentStepIdx(nextIdx);
+      initStepState(steps[nextIdx]);
     } else {
       handleCompleteLesson();
     }
@@ -614,7 +600,7 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     playSound('complete');
     const lessonId = activeLesson.id;
     const isFirstTime = !progress.completedLessons.includes(lessonId);
-    const xpReward = isFirstTime ? activeLesson.xp : 15; // 15 XP for repeat lessons
+    const xpReward = isFirstTime ? activeLesson.xp : 20;
 
     const todayStr = new Date().toISOString().split('T')[0];
     const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -641,20 +627,22 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
 
     try {
       await updateDoc(docRef, updatedProg);
-      logPortalActivity('interlingo_lesson', `Menyelesaikan level: ${activeLesson.title}`, user);
+      logPortalActivity('interlingo_lesson', `Lulus materi: ${activeLesson.title} (${activeLesson.tierLabel})`, user);
     } catch (e) {
-      console.error("Failed to update learning progress:", e);
+      console.error("Failed to save progress:", e);
     }
 
     setLessonComplete(true);
   };
 
-  // Canteen: Feeding mini-game
-  const handleFeedCat = async (catId: string) => {
+  // Feed Canteen Mentor with Chinese Diplomatic Banquet Dish
+  const handleFeedCat = async (catId: string, dishId: string = 'jiaozi') => {
     if (!progress || !user) return;
-    if (progress.xp < 20) {
+    const dish = CHINESE_DIPLOMATIC_DISHES.find(d => d.id === dishId) || CHINESE_DIPLOMATIC_DISHES[0];
+    
+    if (progress.xp < dish.cost) {
       playSound('incorrect');
-      alert("Meow! XP kamu tidak cukup. Selesaikan setidaknya satu materi atau kumpulkan 20 XP untuk membeli camilan ikan!");
+      alert(`XP kamu belum cukup meow! Diperlukan minimal ${dish.cost} XP untuk menyajikan ${dish.name}!`);
       return;
     }
 
@@ -662,807 +650,1051 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
     setFedCatId(catId);
     setXpDeductionAnim(true);
     
-    const mentor = MENTORS[catId];
-    setFeedingBubble(`"${mentor.name} mengunyah ikan basah dengan gembira... Hěn hǎochī (很好吃)!"`);
-    
-    // Pronounce thank you in Mandarin
-    speakMandarin("谢谢你");
+    const mentor = CAT_MENTORS[catId];
+    setFeedingBubble(`"${mentor.name}: ${dish.voicePhrase} (${dish.name} sangat lezat!)"`);
+    speakDiplomaticSpeech(dish.voicePhrase, "zh-CN");
 
     const docRef = doc(db, 'interlingo_progress', user.uid);
     try {
       await updateDoc(docRef, {
-        xp: Math.max(0, progress.xp - 20),
+        xp: Math.max(0, progress.xp - dish.cost),
         updatedAt: new Date().toISOString()
       });
-      logPortalActivity('interlingo_canteen', `Memberi makan mentor ${mentor.name}`, user);
+      logPortalActivity('interlingo_canteen', `Menyajikan ${dish.name} kepada ${mentor.name}`, user);
     } catch (e) {
-      console.error("Failed to deduct XP for feeding:", e);
+      console.error("Failed to feed mentor:", e);
     }
 
-    setTimeout(() => {
-      setXpDeductionAnim(false);
-    }, 1000);
-
+    setTimeout(() => setXpDeductionAnim(false), 1000);
     setTimeout(() => {
       setFedCatId(null);
       setFeedingBubble(null);
-    }, 4500);
+    }, 5000);
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
-        <p className="text-xs text-slate-400 mt-6 uppercase tracking-widest font-black animate-pulse">Menghubungkan ke Pusat Bahasa Mandarin...</p>
+      <div className="flex flex-col items-center justify-center py-24 space-y-4">
+        <Loader2 className="w-12 h-12 text-red-600 animate-spin" />
+        <p className="text-xs text-slate-500 font-bold tracking-widest uppercase animate-pulse">
+          Memuat Kurikulum Diplomasi & Bahasa Mandarin Hubungan Internasional (中文外交)...
+        </p>
       </div>
     );
   }
 
-  // --- VIEW: LESSON ACTIVE GAMEPLAY ---
-  if (activeLesson) {
-    const question = activeLesson.questions[currentQuestionIdx];
-    const progressPercent = Math.round(((currentQuestionIdx) / activeLesson.questions.length) * 100);
-    const mentor = MENTORS[activeLesson.catMentor];
+  // =========================================================================
+  // VIEW: ACTIVE UNIFIED LESSON (INTERLEAVED INFORMATION & DRILLS)
+  // =========================================================================
+  if (activeLesson && steps.length > 0) {
+    const mentor = CAT_MENTORS[activeLesson.catMentor];
+    const totalSteps = steps.length;
+    const progressPct = Math.round(((currentStepIdx + 1) / totalSteps) * 100);
 
     return (
-      <div className="max-w-3xl mx-auto bg-white dark:bg-[#141e26] rounded-[2.5rem] border border-orange-100 dark:border-slate-800 p-6 md:p-8 shadow-2xl relative overflow-hidden">
-        {/* Dynamic ambient bg glow based on correctness */}
-        <div className={`absolute top-0 right-0 w-64 h-64 blur-3xl -z-10 rounded-full transition-colors duration-500 opacity-20 ${
-          isAnswered 
-            ? (selectedOption === question.correctAnswer ? 'bg-emerald-500' : 'bg-rose-500')
-            : 'bg-orange-400'
-        }`} />
-
-        <AnimatePresence mode="wait">
-          {lives <= 0 ? (
-            /* GAME OVER SCREEN */
-            <motion.div
-              key="gameover"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-10 space-y-6"
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Top Navigation & Status Bar */}
+        <div className="bg-white dark:bg-[#1a0f12] p-5 rounded-[2rem] border border-red-100 dark:border-red-950/60 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                playSound('click');
+                if (window.confirm("Keluar dari sesi materi ini?")) {
+                  setActiveLesson(null);
+                }
+              }}
+              className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-red-50 text-slate-500 hover:text-red-500 transition-colors cursor-pointer"
+              title="Kembali ke Peta Stage"
             >
-              <div className="w-24 h-24 bg-gradient-to-tr from-rose-500 to-red-600 text-white rounded-[2.2rem] flex items-center justify-center mx-auto shadow-xl shadow-rose-500/20 animate-bounce">
-                <span className="text-5xl">😾</span>
+              <X className="w-5 h-5" />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-500/20">
+                  Level {activeLesson.stageNumber} • {activeLesson.tierLabel}
+                </span>
+                <span className="text-[9px] font-bold text-slate-400">{activeLesson.difficulty}</span>
               </div>
-              
-              <div className="space-y-2">
-                <h3 className="font-serif text-3xl font-black text-rose-600 dark:text-rose-400">Interupsi, Sidang Gagal!</h3>
-                <p className="text-xs text-rose-500 uppercase tracking-[0.25em] font-black">Diplomasi Mogok • Kucing Kecewa</p>
-                <p className="text-sm max-w-md mx-auto leading-relaxed text-slate-500 dark:text-slate-350 px-4 italic">
-                  “Meow! Diplomasi kamu kacau balau, aliansi bubar, dan kucing perdamaian mogok makan! Coba ulangi materi dengan lebih fokus agar bisa menyuap para oposisi!”
-                </p>
-              </div>
+              <h3 className="font-serif font-black text-lg text-slate-800 dark:text-white leading-tight mt-0.5">
+                {activeLesson.title}
+              </h3>
+            </div>
+          </div>
 
-              {/* Sir Grumpy Profile */}
-              <div className="flex justify-center my-4">
-                <div className="bg-rose-50 dark:bg-rose-950/20 p-5 rounded-[2rem] border border-rose-500/10 max-w-sm flex items-center gap-4">
-                  <img src="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=300&auto=format&fit=crop" className="w-16 h-16 rounded-2xl object-cover border-2 border-rose-500" />
-                  <div className="text-left">
-                    <span className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-full uppercase">Ketua Oposisi</span>
-                    <h4 className="font-serif font-bold text-sm text-slate-800 dark:text-white mt-1">Sir Grumpy</h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">"Kucing FISIP butuh negosiasi nyata, bukan omong kosong!"</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={() => {
-                    playSound('click');
-                    handleStartLesson(activeLesson);
-                  }}
-                  className="px-8 py-4 bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-rose-500/10 transition-all cursor-pointer"
-                >
-                  Ulangi Materi 🔁
-                </button>
-                <button
-                  onClick={() => {
-                    playSound('click');
-                    setActiveLesson(null);
-                  }}
-                  className="px-8 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
-                >
-                  Kembali ke Peta
-                </button>
-              </div>
-            </motion.div>
-          ) : !lessonComplete ? (
-            <motion.div
-              key={currentQuestionIdx}
-              initial={{ opacity: 0, x: 25 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -25 }}
-              className="space-y-6"
-            >
-              {/* Top Header & Duolingo Progress Bar */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  <span className="flex items-center gap-1.5"><Compass className="w-3.5 h-3.5 text-orange-500 animate-spin" /> {activeLesson.title}</span>
-                  <span>Pertanyaan {currentQuestionIdx + 1} dari {activeLesson.questions.length}</span>
-                </div>
-                
-                <div className="flex items-center gap-4">
-                  <div className="h-3.5 flex-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200/50 dark:border-slate-700/50">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progressPercent || 5}%` }}
-                      className="h-full bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500 rounded-full" 
-                    />
-                  </div>
-                  <button 
-                    onClick={() => {
-                      playSound('click');
-                      if (window.confirm("Yakin ingin keluar dan membuang progres latihan ini?")) {
-                        setActiveLesson(null);
-                      }
-                    }}
-                    className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                  >
-                    Keluar
-                  </button>
-                </div>
-
-                {/* Hearts and Timer Row */}
-                <div className="flex items-center justify-between bg-orange-50/50 dark:bg-slate-900/30 px-4 py-2.5 rounded-2xl border border-orange-100/50 dark:border-slate-800">
-                  {/* Hearts */}
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Nyawa:</span>
-                    {[0, 1, 2].map((heartIdx) => (
-                      <motion.div
-                        key={heartIdx}
-                        animate={heartIdx < lives ? { scale: [1, 1.2, 1] } : { scale: 1 }}
-                        transition={{ repeat: heartIdx < lives ? Infinity : 0, repeatDelay: 5 + heartIdx }}
-                      >
-                        <Heart 
-                          className={`w-5 h-5 ${
-                            heartIdx < lives 
-                              ? 'text-rose-500 fill-rose-500 drop-shadow-[0_2px_4px_rgba(244,63,94,0.2)]' 
-                              : 'text-slate-300 dark:text-slate-700'
-                          }`} 
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {/* Mode Badge */}
-                  <div className="hidden sm:flex items-center gap-1 text-[9px] font-black uppercase bg-amber-500/10 dark:bg-amber-500/5 text-amber-600 dark:text-amber-400 px-3 py-1 rounded-full border border-amber-500/10">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    {gameplayMode === 'classic' && 'Cerdas Cermat Tepat ⏱️'}
-                    {gameplayMode === 'jumper' && 'Lompat Kucing Lucu 😸'}
-                    {gameplayMode === 'whack' && 'Gebuk Tikus Koruptor 🔨'}
-                    {gameplayMode === 'catcher' && 'Tangkap Geopolitik 🎈'}
-                  </div>
-
-                  {/* Timer */}
-                  <div className="flex items-center gap-1.5">
-                    <Clock className={`w-4 h-4 ${timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-slate-400'}`} />
-                    <span className={`font-mono text-sm font-black ${
-                      timeLeft <= 5 
-                        ? 'text-red-500 animate-bounce bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20' 
-                        : 'text-slate-700 dark:text-slate-300'
-                    }`}>
-                      {timeLeft}s
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Interactive Mentor Dialogue Box */}
-              <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[2rem] p-5 border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center gap-5">
-                <CatMemeAvatar 
-                  type={mentor.overlayType} 
-                  imageUrl={mentor.imageUrl} 
-                  className="w-20 h-20 md:w-24 md:h-24"
-                  talking={isAnswered && selectedOption === question.correctAnswer}
+          {/* Unified Progress Indicator */}
+          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+            <div className="space-y-1 text-right">
+              <span className="text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400">
+                Langkah {currentStepIdx + 1} dari {totalSteps}
+              </span>
+              <div className="w-32 sm:w-40 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200/50 dark:border-slate-700/50">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPct}%` }}
+                  className="h-full bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 rounded-full transition-all duration-300 shadow" 
                 />
+              </div>
+            </div>
+
+            {/* Lives / Hearts */}
+            <div className="flex items-center gap-1 bg-red-50/60 dark:bg-slate-900/60 px-3 py-2 rounded-2xl border border-red-100/60 dark:border-slate-800">
+              {[0, 1, 2].map((heartIdx) => (
+                <Heart 
+                  key={heartIdx}
+                  className={`w-4 h-4 ${
+                    heartIdx < lives 
+                      ? 'text-red-600 fill-red-600 drop-shadow-[0_2px_4px_rgba(220,38,38,0.3)]' 
+                      : 'text-slate-300 dark:text-slate-700'
+                  }`} 
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Step Container */}
+        <div className="bg-white dark:bg-[#1a0f12] rounded-[2.5rem] border border-red-100 dark:border-red-950/60 p-6 md:p-8 shadow-2xl relative overflow-hidden">
+          <AnimatePresence mode="wait">
+            {lives <= 0 ? (
+              /* ================= GAME OVER SCREEN ================= */
+              <motion.div
+                key="gameover"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-center py-10 space-y-6"
+              >
+                <div className="w-24 h-24 bg-gradient-to-tr from-red-600 to-rose-700 text-white rounded-[2.2rem] flex items-center justify-center mx-auto shadow-xl shadow-red-600/25 animate-bounce">
+                  <span className="text-5xl">😾</span>
+                </div>
                 
-                <div className="space-y-2 flex-1 text-center md:text-left relative">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-500 px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/20 w-fit">
-                    Mentor: {mentor.name}
-                  </span>
-                  <p className="text-xs md:text-sm text-slate-500 dark:text-slate-300 font-medium leading-relaxed italic">
-                    {isAnswered 
-                      ? (selectedOption === question.correctAnswer 
-                          ? `“Luar biasa! Benar sekali meow! Dengar dan ulangi pelafalan Mandarin-nya ya.”` 
-                          : `“Aduh, sayang sekali meow. Jawabannya kurang tepat, tapi coba telusuri penjelasanku!”`)
-                      : isTimeUp
-                      ? `“WAKTU HABIS MEOW! Kamu harus bertindak lebih cepat di panggung internasional!”`
-                      : `“${mentor.catchphrase} Perhatikan baik-baik soal di bawah!”`
-                    }
+                <div className="space-y-2">
+                  <h3 className="font-serif text-3xl font-black text-red-600 dark:text-red-400">Interupsi Sidang, Negosiasi Terhenti!</h3>
+                  <p className="text-xs text-red-500 uppercase tracking-[0.25em] font-black">Taktik Diplomasi Butuh Pengasahan (需再学习)</p>
+                  <p className="text-sm max-w-md mx-auto leading-relaxed text-slate-500 dark:text-slate-300 px-4 italic">
+                    “Meow! Aliansi diplomatikmu goyah. Ulangi level ini dari awal untuk memperdalam konsep dan menaklukkan resolusi!”
                   </p>
                 </div>
-              </div>
 
-              {/* Main Interactive Question Screen */}
-              <div className="space-y-4">
-                <div className="bg-orange-500/[0.02] dark:bg-orange-500/[0.01] border border-orange-500/10 p-6 rounded-3xl text-center space-y-4 relative">
-                  <div className="absolute top-3 right-3 flex gap-2">
-                    {question.pinyin && (
-                      <span className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-950/30 px-2.5 py-0.5 rounded-full font-mono">
-                        {question.pinyin}
-                      </span>
-                    )}
-                  </div>
-
-                  <HelpCircle className="w-10 h-10 text-orange-500 mx-auto animate-bounce" />
-                  <h3 className="font-serif font-black text-xl md:text-2xl leading-relaxed text-slate-800 dark:text-white max-w-xl mx-auto">
-                    {question.question}
-                  </h3>
-
-                  {question.audioText && (
-                    <button
-                      onClick={() => speakMandarin(question.audioText!)}
-                      className="px-4 py-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 mx-auto cursor-pointer"
-                      title="Klik untuk mendengarkan lafal Mandarin asli"
-                    >
-                      <Volume2 className="w-4 h-4" /> Dengar Pelafalan
-                    </button>
-                  )}
+                <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      handleOpenLesson(activeLesson);
+                    }}
+                    className="px-8 py-4 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-600/20 transition-all cursor-pointer"
+                  >
+                    Ulangi Level Ini 🔁
+                  </button>
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setActiveLesson(null);
+                    }}
+                    className="px-8 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
+                  >
+                    Kembali ke Peta 🗺️
+                  </button>
+                </div>
+              </motion.div>
+            ) : lessonComplete ? (
+              /* ================= LESSON COMPLETE CELEBRATION ================= */
+              <motion.div
+                key="complete"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-center py-10 space-y-6"
+              >
+                <div className="w-24 h-24 bg-gradient-to-tr from-red-600 via-rose-600 to-amber-500 text-white rounded-[2.2rem] flex items-center justify-center mx-auto shadow-xl shadow-red-600/30 animate-bounce">
+                  <Trophy className="w-12 h-12 text-amber-300" />
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="font-serif text-3xl font-black text-slate-800 dark:text-white">Selamat! Misi Diplomasi Ditaklukkan! 🏮</h3>
+                  <p className="text-xs text-red-600 dark:text-red-400 uppercase tracking-[0.25em] font-black">
+                    PENCAPAIAN DIPLOMASI MANDARIN (外交成就)
+                  </p>
+                  <p className="text-sm max-w-md mx-auto leading-relaxed text-slate-500 dark:text-slate-300 px-4">
+                    Selamat, kamu berhasil menguasai materi **{activeLesson.title}** secara bertahap dari teori, istilah, hingga simulasi praktik!
+                  </p>
                 </div>
 
-                {/* DYNAMIC ARCADE GAME arenas */}
-                {gameplayMode === 'classic' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    {question.options.map((opt, idx) => {
-                      const isSelected = selectedOption === idx;
-                      const isCorrect = question.correctAnswer === idx;
-                      let cardStyle = "border-slate-200 dark:border-slate-800 hover:border-orange-400 bg-white dark:bg-[#18242f]";
+                <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto p-2">
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4.5 rounded-3xl border border-red-500/10 shadow-sm">
+                    <Star className="w-6 h-6 text-amber-500 mx-auto mb-1 animate-pulse" />
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">XP Diperoleh</p>
+                    <p className="text-lg font-black text-red-600 dark:text-red-400">
+                      +{progress?.completedLessons.includes(activeLesson.id) ? 20 : activeLesson.xp} XP
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4.5 rounded-3xl border border-red-500/10 shadow-sm">
+                    <Flame className="w-6 h-6 text-amber-500 mx-auto mb-1" />
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Streak Belajar</p>
+                    <p className="text-lg font-black text-amber-600">{progress?.streak || 1} Hari</p>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setActiveLesson(null);
+                    }}
+                    className="px-10 py-4.5 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-600/25 transition-all cursor-pointer"
+                  >
+                    Lanjut ke Peta Stage 🗺️
+                  </button>
+                </div>
+              </motion.div>
+            ) : currentStep ? (
+              /* ================= ACTIVE STEP RENDERING ================= */
+              <motion.div
+                key={currentStepIdx}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                {/* --- STEP TYPE 1: BRIEFING & TEORI HI --- */}
+                {currentStep.stepType === 'briefing' && currentStep.briefing && (
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-br from-red-950 via-red-900 to-slate-950 text-white p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden border border-red-800/40">
+                      <div className="absolute top-0 right-0 w-80 h-80 bg-red-600/10 blur-3xl rounded-full pointer-events-none" />
                       
-                      if (isAnswered) {
-                        if (isCorrect) cardStyle = "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold ring-2 ring-emerald-500/10";
-                        else if (isSelected) cardStyle = "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400";
-                        else cardStyle = "border-slate-100 dark:border-slate-900 opacity-40";
-                      } else if (isSelected) {
-                        cardStyle = "border-orange-500 bg-orange-500/5 ring-4 ring-orange-500/10";
-                      }
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                        <div className="space-y-3 max-w-2xl">
+                          <div className="inline-flex items-center gap-2 bg-red-600/30 text-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-amber-400/30 shadow">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 1. Briefing Diplomasi & Teori HI (外交简报)
+                          </div>
+                          <h2 className="font-serif text-2xl md:text-3xl font-black leading-tight text-amber-100">
+                            {currentStep.briefing.title}
+                          </h2>
+                          <p className="text-xs md:text-sm text-red-100/90 leading-relaxed font-light">
+                            {currentStep.briefing.summary}
+                          </p>
+                        </div>
 
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => handleOptionClick(idx)}
-                          disabled={isAnswered}
-                          className={`text-left p-4.5 rounded-2xl border text-xs md:text-sm font-semibold transition-all flex items-center justify-between ${cardStyle} active:scale-98 cursor-pointer`}
-                        >
-                          <div className="flex items-center gap-4">
-                            <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
-                              isSelected ? 'bg-orange-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                            }`}>
-                              {String.fromCharCode(65 + idx)}
+                        <div className="flex flex-col items-center gap-2 bg-black/40 p-4 rounded-3xl border border-amber-400/20 backdrop-blur-sm shrink-0">
+                          <CatMemeAvatar 
+                            type={mentor.overlayType} 
+                            imageUrl={mentor.imageUrl} 
+                            className="w-20 h-20"
+                          />
+                          <div className="text-center">
+                            <p className="text-[10px] font-bold text-amber-300">{mentor.name}</p>
+                            <p className="text-[8px] text-red-200/70 uppercase">{mentor.institution}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Theory Insights Pillars */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-white/10">
+                        <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-amber-300 flex items-center gap-1.5">
+                            <Scale className="w-3.5 h-3.5 text-amber-400" /> Perspektif Teori & Landasan HI
+                          </span>
+                          <p className="text-xs text-slate-200 leading-relaxed italic">
+                            "{currentStep.briefing.theoreticalPerspective}"
+                          </p>
+                        </div>
+                        <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-amber-200 flex items-center gap-1.5">
+                            <Globe className="w-3.5 h-3.5 text-amber-300" /> Protokol Sidang & Konvensi
+                          </span>
+                          <p className="text-xs text-slate-200 leading-relaxed">
+                            {currentStep.briefing.diplomaticProtocol}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Key Vocabulary Highlights */}
+                      {currentStep.briefing.keyVocabularyHighlights && currentStep.briefing.keyVocabularyHighlights.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap items-center gap-2">
+                          <span className="text-[9px] font-black uppercase text-amber-300 tracking-wider">
+                            Istilah Kunci (核心词汇):
+                          </span>
+                          {currentStep.briefing.keyVocabularyHighlights.map((term, i) => (
+                            <span key={i} className="text-xs bg-red-600/30 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded-lg font-mono">
+                              {term}
                             </span>
-                            <span className="text-slate-800 dark:text-slate-100">{opt}</span>
-                          </div>
-                          {isAnswered && isCorrect && <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                {gameplayMode === 'jumper' && (
-                  <div className="space-y-4">
-                    <div className="relative bg-gradient-to-b from-sky-400/10 to-emerald-500/10 dark:from-sky-950/20 dark:to-emerald-950/20 h-56 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col justify-between p-4">
-                      {/* Floating Platforms Grid */}
-                      <div className="grid grid-cols-2 gap-4 z-10">
-                        {question.options.map((opt, idx) => {
-                          const isSelected = selectedOption === idx;
-                          const isCorrect = question.correctAnswer === idx;
-                          let platformStyle = "bg-amber-100 border-amber-300 text-amber-900 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-200";
-                          
-                          if (isAnswered) {
-                            if (isCorrect) platformStyle = "bg-emerald-500 text-white border-emerald-600";
-                            else if (isSelected) platformStyle = "bg-rose-500 text-white border-rose-600 animate-pulse";
-                            else platformStyle = "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 opacity-40";
-                          } else if (jumperCatPos === idx) {
-                            platformStyle = "bg-orange-400 text-white border-orange-500";
-                          }
-                          
-                          return (
-                            <button
-                              key={idx}
-                              disabled={isAnswered}
-                              onClick={() => handleJumperLeap(idx)}
-                              className={`p-3 rounded-2xl border-b-4 font-bold text-xs shadow-md transition-all text-center flex flex-col items-center justify-center relative hover:scale-102 active:scale-95 cursor-pointer ${platformStyle}`}
-                            >
-                              <span className="absolute top-1 left-2 text-[8px] bg-black/10 px-1.5 py-0.5 rounded uppercase font-black">PLATFORM {String.fromCharCode(65 + idx)}</span>
-                              <span className="mt-2 text-[11px] leading-snug line-clamp-2">{opt}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Ground & Jumper Sprite */}
-                      <div className="relative h-16 w-full border-t border-slate-300/30 flex justify-center items-end bg-black/5 rounded-b-2xl">
-                        <motion.div
-                          className="absolute bottom-2 left-[50%] -translate-x-1/2"
-                          animate={
-                            jumperCatPos === null
-                              ? { y: [0, -3, 0] }
-                              : jumperCatPos === 0
-                              ? { x: -110, y: -110, rotate: [0, 180, 360], scale: 1.1 }
-                              : jumperCatPos === 1
-                              ? { x: 110, y: -110, rotate: [0, -180, -360], scale: 1.1 }
-                              : jumperCatPos === 2
-                              ? { x: -110, y: -50, rotate: [0, 180, 360], scale: 1.1 }
-                              : { x: 110, y: -50, rotate: [0, -180, -360], scale: 1.1 }
-                          }
-                          transition={{ 
-                            y: jumperCatPos === null ? { repeat: Infinity, duration: 1.5 } : { type: 'spring', stiffness: 100, damping: 10 },
-                            x: { type: 'spring', stiffness: 100, damping: 10 },
-                            rotate: { duration: 0.6 }
-                          }}
-                        >
-                          <div className="flex flex-col items-center relative">
-                            {jumperCatPos === null && (
-                              <span className="absolute -top-7 text-[8px] font-black bg-orange-500 text-white px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-bounce">LOMPAT! 😸</span>
-                            )}
-                            
-                            <div className="w-11 h-11 bg-orange-400 rounded-full border-2 border-white flex items-center justify-center shadow-md text-xl relative">
-                              {isAnswered && selectedOption === question.correctAnswer ? '😸👑' : isAnswered ? '😵' : '😸'}
-                              {/* ears */}
-                              <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-orange-400 rounded-tl-full border-t-2 border-l-2 border-white -rotate-[15deg]" />
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-400 rounded-tr-full border-t-2 border-r-2 border-white rotate-[15deg]" />
-                            </div>
-                            <div className="flex gap-3 -mt-1">
-                              <div className="w-3 h-2.5 bg-white rounded-full border border-orange-300" />
-                              <div className="w-3 h-2.5 bg-white rounded-full border border-orange-300" />
-                            </div>
-                          </div>
-                        </motion.div>
-                        
-                        <span className="text-[9px] font-bold text-slate-400/60 tracking-wider">TAP SEBUAH PLATFORM UNTUK MELOMPAT</span>
-                      </div>
+                    {/* Action button to proceed */}
+                    <div className="flex justify-end pt-2">
+                      <button
+                        onClick={handleNextStep}
+                        className="px-8 py-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-600/25 transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        Paham Briefing! Masuk ke Pembelajaran Istilah <ArrowRight className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 )}
 
-                {gameplayMode === 'whack' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 bg-gradient-to-b from-emerald-800/20 to-emerald-950/20 p-4 rounded-3xl border border-emerald-900/30 relative overflow-hidden h-72">
-                      {/* Mallet mallet thud effect */}
-                      <AnimatePresence>
-                        {whackHammerPos !== null && (
-                          <motion.div
-                            initial={{ opacity: 0, rotate: 60, scale: 0.8 }}
-                            animate={{ 
-                              opacity: 1, 
-                              rotate: -20, 
-                              scale: 1.2,
-                              x: whackHammerPos === 0 || whackHammerPos === 2 ? -30 : 130,
-                              y: whackHammerPos === 0 || whackHammerPos === 1 ? -40 : 80
-                            }}
-                            exit={{ opacity: 0, scale: 0.8 }}
-                            className="absolute z-30 pointer-events-none left-1/3 top-1/4 text-4xl"
-                          >
-                            🔨💥
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {question.options.map((opt, idx) => {
-                        const isSelected = selectedOption === idx;
-                        const isCorrect = question.correctAnswer === idx;
-                        let moleStyle = "bg-amber-950/60 hover:bg-amber-900/80 border-amber-900 text-amber-200";
-                        
-                        if (isAnswered) {
-                          if (isCorrect) moleStyle = "bg-emerald-500/20 border-emerald-500 text-emerald-300";
-                          else if (isSelected) moleStyle = "bg-rose-500/20 border-rose-500 text-rose-300";
-                          else moleStyle = "bg-slate-900/40 border-slate-800 opacity-20";
-                        }
-
-                        return (
-                          <button
-                            key={idx}
-                            disabled={isAnswered}
-                            onClick={() => handleWhackMole(idx)}
-                            className={`relative border-2 rounded-2xl p-3 flex flex-col justify-between items-center transition-all duration-300 active:scale-95 group overflow-hidden h-28 cursor-pointer ${moleStyle}`}
-                          >
-                            <div className="absolute bottom-0 inset-x-0 h-6 bg-slate-950/50 rounded-full border-t border-slate-900 flex items-center justify-center">
-                              <span className="text-[8px] text-slate-500 uppercase tracking-widest font-black">LOBANG {String.fromCharCode(65 + idx)}</span>
-                            </div>
-
-                            <motion.div
-                              animate={
-                                isAnswered && isSelected && !isCorrect
-                                  ? { y: 20, rotate: 45 }
-                                  : isAnswered && isCorrect
-                                  ? { y: [0, -10, 0], scale: 1.1 }
-                                  : { y: [0, -5, 0] }
-                              }
-                              transition={{ repeat: isAnswered ? 0 : Infinity, duration: 2, repeatType: "reverse" }}
-                              className="flex flex-col items-center z-10 -mt-1"
-                            >
-                              <div className="relative">
-                                <div className="w-10 h-10 bg-amber-750 dark:bg-amber-800 rounded-full border border-amber-500 shadow flex items-center justify-center text-xl relative">
-                                  {isAnswered && isCorrect ? '🐭💰' : isAnswered && isSelected ? '😵💨' : '🐭🕶️'}
-                                  <div className="absolute -top-1 -left-1 w-3.5 h-3.5 bg-amber-800 rounded-full border border-amber-600" />
-                                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-800 rounded-full border border-amber-600" />
-                                </div>
-                              </div>
-                            </motion.div>
-
-                            <span className="text-[10px] font-bold text-center leading-tight text-white px-1 py-0.5 rounded bg-black/40 border border-white/5 w-full truncate z-20">
-                              {opt}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {gameplayMode === 'catcher' && (
-                  <div className="space-y-4">
-                    <div className="relative bg-gradient-to-b from-indigo-900/40 to-slate-900/60 dark:from-[#0b0f19] dark:to-[#141a29] h-72 rounded-3xl border border-indigo-500/20 overflow-hidden p-3 flex flex-col justify-between">
-                      <div className="absolute top-2 inset-x-0 text-center pointer-events-none z-10">
-                        <span className="text-[9px] font-black uppercase bg-indigo-500 text-white px-2.5 py-0.5 rounded-full tracking-widest shadow-md">
-                          Pecahkan Gelembung Diplomasi yang Benar! 🎈
+                {/* --- STEP TYPE 2: SISIPAN ISTILAH BARU (CONCEPT CARD) --- */}
+                {currentStep.stepType === 'concept_card' && currentStep.conceptCard && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
+                          {currentStep.conceptCard.tag || 'Istilah & Frasa Kunci'}
+                        </span>
+                        <span className="text-xs text-slate-400 font-medium">
+                          Pelajari sebelum latihan interaktif
                         </span>
                       </div>
 
-                      <div className="relative flex-1 w-full">
-                        {bubbles.map((b) => {
-                          const isSelected = selectedOption === b.idx;
-                          const isCorrect = question.correctAnswer === b.idx;
-                          
-                          let bubbleStyle = "bg-indigo-400/20 border-indigo-400 hover:bg-indigo-400/35 text-indigo-100";
-                          if (isAnswered) {
-                            if (isCorrect) bubbleStyle = "bg-emerald-500 text-white border-emerald-600 scale-105 shadow-emerald-500/20";
-                            else if (isSelected) bubbleStyle = "bg-rose-500 text-white border-rose-600 scale-95 opacity-50";
-                            else bubbleStyle = "opacity-20 bg-slate-800 border-slate-700 text-slate-500 pointer-events-none";
-                          }
+                      <button
+                        onClick={() => speakDiplomaticSpeech(currentStep.conceptCard!.audioText, currentStep.conceptCard!.audioLang)}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-red-600/20 transition-all cursor-pointer"
+                        title="Dengarkan pelafalan asli"
+                      >
+                        <Volume2 className="w-4 h-4" /> Dengar Pelafalan (发音)
+                      </button>
+                    </div>
 
-                          return (
-                            <button
-                              key={b.id}
-                              disabled={isAnswered}
-                              onClick={() => handlePopBubble(b.idx)}
-                              style={{
-                                position: "absolute",
-                                left: `${b.x}%`,
-                                top: `${b.y}%`
-                              }}
-                              className={`w-36 h-20 rounded-[2rem] border-2 shadow-lg backdrop-blur-xs flex flex-col items-center justify-center p-2 text-[10px] leading-snug font-black transition-all text-center select-none active:scale-95 cursor-pointer ${bubbleStyle}`}
-                            >
-                              <span className="text-[8px] uppercase tracking-wider bg-black/10 px-1 rounded-sm mb-1">
-                                Opsi {String.fromCharCode(65 + b.idx)}
-                              </span>
-                              <span className="line-clamp-2">{b.text}</span>
-                            </button>
-                          );
-                        })}
+                    <div className="bg-gradient-to-br from-red-50/80 via-amber-50/40 to-rose-50/40 dark:from-[#1f1215] dark:via-[#1c1214] dark:to-[#1a0f12] p-6 md:p-10 rounded-3xl border-2 border-red-500/20 shadow-lg space-y-6">
+                      <div className="text-center py-4 space-y-3">
+                        <h2 
+                          className="font-serif font-black text-3xl md:text-5xl text-slate-800 dark:text-white tracking-wide" 
+                          dir={currentStep.conceptCard.language === 'ar' ? 'rtl' : 'ltr'}
+                        >
+                          {currentStep.conceptCard.term}
+                        </h2>
+                        {currentStep.conceptCard.transliteration && (
+                          <p className="text-sm md:text-base font-mono text-red-600 dark:text-amber-400 font-bold">
+                            {currentStep.conceptCard.transliteration}
+                          </p>
+                        )}
+                        <div className="inline-block bg-white dark:bg-slate-800 px-6 py-2.5 rounded-2xl shadow-sm border border-red-100 dark:border-slate-700">
+                          <p className="text-sm md:text-base font-bold text-slate-700 dark:text-slate-200">
+                            {currentStep.conceptCard.meaning}
+                          </p>
+                        </div>
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-red-500/10">
+                        <div className="bg-white/80 dark:bg-slate-800/80 p-4.5 rounded-2xl border border-red-100/60 dark:border-slate-700/50 space-y-1">
+                          <span className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1">
+                            <Info className="w-3.5 h-3.5 text-red-500" /> Konteks Diplomasi & Hubungan Internasional:
+                          </span>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                            {currentStep.conceptCard.contextHI}
+                          </p>
+                        </div>
+
+                        <div className="bg-white/80 dark:bg-slate-800/80 p-4.5 rounded-2xl border border-red-100/60 dark:border-slate-700/50 space-y-1">
+                          <span className="text-[9px] font-black uppercase text-slate-400 flex items-center gap-1">
+                            <FileText className="w-3.5 h-3.5 text-amber-500" /> Contoh dalam Sidang / Traktat:
+                          </span>
+                          <p className="text-xs font-serif text-slate-700 dark:text-slate-200 italic leading-relaxed">
+                            "{currentStep.conceptCard.exampleSentence}"
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <CatMemeAvatar 
+                          type={mentor.overlayType} 
+                          imageUrl={mentor.imageUrl} 
+                          className="w-8 h-8 rounded-xl"
+                        />
+                        <span>{mentor.name}: "Lafalkan istilah ini lalu uji pemahamanmu!"</span>
+                      </div>
+
+                      <button
+                        onClick={handleNextStep}
+                        className="px-8 py-3.5 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-red-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        Lanjut ke Latihan Terkait <ArrowRight className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Explanations Banner */}
-              <AnimatePresence>
-                {isAnswered && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`p-5 rounded-3xl border ${
-                      selectedOption === question.correctAnswer 
-                        ? 'bg-emerald-500/[0.03] border-emerald-500/20' 
-                        : 'bg-rose-500/[0.03] border-rose-500/20'
-                    }`}
-                  >
-                    <div className="flex gap-4">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
-                        selectedOption === question.correctAnswer ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                      }`}>
-                        {selectedOption === question.correctAnswer ? <CheckCircle className="w-5 h-5 animate-bounce" /> : <Flame className="w-5 h-5" />}
+                {/* --- STEP TYPE 3: SOAL & LATIHAN INTERAKTIF (QUESTION) --- */}
+                {currentStep.stepType === 'question' && currentStep.question && (
+                  <div className="space-y-6">
+                    {/* Header: Question Type Badge & Timer */}
+                    <div className="flex items-center justify-between bg-red-50/50 dark:bg-slate-900/40 px-4 py-2.5 rounded-2xl border border-red-100/50 dark:border-slate-800">
+                      {/* Question Model Type Tag */}
+                      <div className="flex items-center gap-1.5 text-[9px] font-black uppercase bg-red-500/10 text-red-600 dark:text-red-400 px-3 py-1 rounded-full border border-red-500/20">
+                        {currentStep.question.type === 'multiple_choice' && 'Pilihan Ganda Kontekstual 📝'}
+                        {currentStep.question.type === 'sentence_builder' && 'Penyusun Frasa Resolusi 🧩'}
+                        {currentStep.question.type === 'matching' && 'Hubungkan Pasangan Istilah 🔗'}
+                        {currentStep.question.type === 'scenario_dilemma' && 'Studi Kasus Diplomasi 🏛️'}
+                        {currentStep.question.type === 'listening' && 'Uji Pendengaran Audio 🎧'}
+                        {currentStep.question.type === 'true_false' && 'Analisis Benar / Salah ⚖️'}
                       </div>
-                      <div className="space-y-1">
-                        <h4 className={`text-xs font-black uppercase tracking-wider ${
-                          selectedOption === question.correctAnswer ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+
+                      {/* Timer */}
+                      <div className="flex items-center gap-1.5">
+                        <Clock className={`w-4 h-4 ${timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-slate-400'}`} />
+                        <span className={`font-mono text-sm font-black ${
+                          timeLeft <= 5 
+                            ? 'text-red-500 animate-bounce bg-red-500/10 px-2 py-0.5 rounded-md' 
+                            : 'text-slate-700 dark:text-slate-300'
                         }`}>
-                          {selectedOption === question.correctAnswer ? 'Jawaban Kamu Tepat, Brilian!' : 'Kurang Tepat! Terus Belajar'}
-                        </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-350 leading-relaxed italic">{question.explanation}</p>
+                          {timeLeft}s
+                        </span>
                       </div>
                     </div>
-                  </motion.div>
+
+                    {/* Mentor Speech Dialogue */}
+                    <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[2rem] p-4 border border-slate-100 dark:border-slate-800 flex items-center gap-4">
+                      <CatMemeAvatar 
+                        type={mentor.overlayType} 
+                        imageUrl={mentor.imageUrl} 
+                        className="w-14 h-14"
+                        talking={isAnswered}
+                      />
+                      <div className="space-y-0.5 flex-1">
+                        <span className="text-[9px] font-black uppercase text-red-600 dark:text-amber-400">{mentor.name}</span>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 italic font-medium leading-relaxed">
+                          {isAnswered
+                            ? (selectedOption === currentStep.question.correctAnswer || (currentStep.question.type === 'sentence_builder' && isAnswered)
+                                ? '“Excellent! Jawabanmu tepat dan menunjukkan kematangan diplomatik.”'
+                                : '“Kurang tepat meow. Telaah kembali catatan analisis di bawah!”')
+                            : `“${mentor.catchphrase} Selesaikan tantangan ini dengan cermat!”`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Question Content: MULTIPLE CHOICE or TRUE/FALSE */}
+                    {(currentStep.question.type === 'multiple_choice' || currentStep.question.type === 'true_false') && (
+                      <div className="space-y-4">
+                        <div className="bg-red-500/[0.03] border border-red-500/15 p-6 rounded-3xl text-center space-y-3">
+                          <h3 className="font-serif font-black text-xl md:text-2xl text-slate-800 dark:text-white leading-relaxed max-w-2xl mx-auto">
+                            {currentStep.question.question}
+                          </h3>
+                          {currentStep.question.audioText && (
+                            <button
+                              onClick={() => speakDiplomaticSpeech(currentStep.question!.audioText!, currentStep.question!.audioLang)}
+                              className="px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-2 cursor-pointer"
+                            >
+                              <Volume2 className="w-4 h-4" /> Putar Audio Lafal (播放发音)
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {currentStep.question.type === 'true_false' ? (
+                            [
+                              { label: 'Benar (True / 正确)', val: true },
+                              { label: 'Salah (False / 错误)', val: false }
+                            ].map((tf, idx) => {
+                              const isSelected = selectedOption === idx;
+                              const isCorrect = currentStep.question!.isTrue === tf.val;
+                              let style = "border-slate-200 dark:border-slate-800 bg-white dark:bg-[#18242f]";
+                              if (isAnswered) {
+                                if (isCorrect) style = "bg-red-500/10 border-red-500 text-red-600 dark:text-red-400 font-bold ring-2 ring-red-500/20";
+                                else if (isSelected) style = "bg-rose-500/10 border-rose-500 text-rose-600";
+                                else style = "opacity-40";
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  disabled={isAnswered}
+                                  onClick={() => handleSelectOption(idx)}
+                                  className={`p-5 rounded-2xl border text-sm font-bold transition-all text-center flex items-center justify-center gap-3 ${style} cursor-pointer hover:border-red-500`}
+                                >
+                                  <span>{tf.label}</span>
+                                  {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-red-600" />}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            currentStep.question.options?.map((opt, idx) => {
+                              const isSelected = selectedOption === idx;
+                              const isCorrect = currentStep.question!.correctAnswer === idx;
+                              let style = "border-slate-200 dark:border-slate-800 bg-white dark:bg-[#18242f]";
+                              if (isAnswered) {
+                                if (isCorrect) style = "bg-red-500/10 border-red-500 text-red-600 dark:text-red-400 font-bold ring-2 ring-red-500/20";
+                                else if (isSelected) style = "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400";
+                                else style = "opacity-40";
+                              } else if (isSelected) {
+                                style = "border-red-500 bg-red-500/5 ring-4 ring-red-500/10";
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  disabled={isAnswered}
+                                  onClick={() => handleSelectOption(idx)}
+                                  className={`p-4.5 rounded-2xl border text-xs md:text-sm font-semibold transition-all flex items-center justify-between text-left ${style} cursor-pointer hover:border-red-500`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                                      isSelected ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                    }`}>
+                                      {String.fromCharCode(65 + idx)}
+                                    </span>
+                                    <span className="text-slate-800 dark:text-slate-100">{opt}</span>
+                                  </div>
+                                  {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-red-600 shrink-0" />}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Question Content: SCENARIO DILEMMA */}
+                    {currentStep.question.type === 'scenario_dilemma' && (
+                      <div className="space-y-4">
+                        <div className="bg-amber-500/5 border border-amber-500/20 p-6 rounded-3xl space-y-3">
+                          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-black text-xs uppercase tracking-wider">
+                            <Scale className="w-4 h-4" /> Skenario Kasus Diplomatik (外交情境案例)
+                          </div>
+                          <p className="text-sm md:text-base font-serif text-slate-800 dark:text-slate-100 leading-relaxed italic bg-white/60 dark:bg-slate-800/60 p-4 rounded-2xl border border-amber-500/10">
+                            "{currentStep.question.scenario}"
+                          </p>
+                          <h4 className="font-bold text-sm text-slate-800 dark:text-white pt-2">
+                            {currentStep.question.question}
+                          </h4>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          {currentStep.question.options?.map((opt, idx) => {
+                            const isSelected = selectedOption === idx;
+                            const isCorrect = currentStep.question!.correctAnswer === idx;
+                            let style = "border-slate-200 dark:border-slate-800 bg-white dark:bg-[#18242f]";
+                            if (isAnswered) {
+                              if (isCorrect) style = "bg-red-500/10 border-red-500 text-red-600 dark:text-red-400 font-bold ring-2 ring-red-500/20";
+                              else if (isSelected) style = "bg-rose-500/10 border-rose-500 text-rose-600";
+                              else style = "opacity-40";
+                            }
+
+                            return (
+                              <button
+                                key={idx}
+                                disabled={isAnswered}
+                                onClick={() => handleSelectOption(idx)}
+                                className={`p-4 rounded-2xl border text-xs md:text-sm font-medium transition-all text-left flex items-start justify-between gap-3 ${style} cursor-pointer hover:border-red-500`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <span className="w-6 h-6 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-600 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="text-slate-800 dark:text-slate-100">{opt}</span>
+                                </div>
+                                {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Question Content: SENTENCE BUILDER */}
+                    {currentStep.question.type === 'sentence_builder' && (
+                      <div className="space-y-4">
+                        <div className="bg-red-500/[0.03] border border-red-500/15 p-6 rounded-3xl text-center space-y-2">
+                          <h3 className="font-serif font-black text-xl text-slate-800 dark:text-white">
+                            {currentStep.question.question}
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Ketuk kata-kata di bawah secara berurutan untuk menyusun frasa diplomasi resmi Mandarin.
+                          </p>
+                        </div>
+
+                        {/* Assembled Sentence Box */}
+                        <div className="min-h-[70px] bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border-2 border-dashed border-red-200 dark:border-red-950 flex flex-wrap items-center gap-2">
+                          {assembledTokens.map((tok, idx) => (
+                            <motion.button
+                              key={idx}
+                              layout
+                              disabled={isAnswered}
+                              onClick={() => handleRemoveToken(tok, idx)}
+                              className="px-3.5 py-2 bg-gradient-to-r from-red-600 to-amber-600 text-white rounded-xl text-xs md:text-sm font-bold shadow-md shadow-red-600/20 hover:bg-rose-600 transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>{tok}</span>
+                              {!isAnswered && <X className="w-3.5 h-3.5 opacity-60" />}
+                            </motion.button>
+                          ))}
+
+                          {assembledTokens.length === 0 && (
+                            <span className="text-xs text-slate-400 italic">Ketuk potongan kata Hanzi / Pinyin di bawah...</span>
+                          )}
+                        </div>
+
+                        {/* Available Word Bank */}
+                        <div className="flex flex-wrap gap-2 justify-center py-2">
+                          {availableTokens.map((tok, idx) => (
+                            <button
+                              key={idx}
+                              disabled={isAnswered}
+                              onClick={() => handleAddToken(tok, idx)}
+                              className="px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-500 rounded-xl text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-200 shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                            >
+                              {tok}
+                            </button>
+                          ))}
+                        </div>
+
+                        {!isAnswered && (
+                          <div className="text-center pt-2">
+                            <button
+                              disabled={assembledTokens.length === 0}
+                              onClick={handleCheckSentence}
+                              className="px-8 py-3 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 disabled:opacity-40 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-red-600/20 transition-all cursor-pointer"
+                            >
+                              Verifikasi Susunan Kalimat (验证句子)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Question Content: MATCHING PAIRS */}
+                    {currentStep.question.type === 'matching' && currentStep.question.matchingPairs && (
+                      <div className="space-y-4">
+                        <div className="bg-red-500/[0.03] border border-red-500/15 p-5 rounded-3xl text-center space-y-1">
+                          <h3 className="font-serif font-black text-xl text-slate-800 dark:text-white">
+                            {currentStep.question.question}
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Pilih istilah Mandarin di sisi kiri, lalu pasangkan dengan arti yang tepat di sisi kanan.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Left items */}
+                          <div className="space-y-2">
+                            {currentStep.question.matchingPairs.map((pair, idx) => {
+                              const isMatched = !!matchedPairs[pair.left];
+                              const isSelected = selectedLeft === pair.left;
+
+                              return (
+                                <button
+                                  key={idx}
+                                  disabled={isMatched || isAnswered}
+                                  onClick={() => handleSelectLeftPair(pair.left)}
+                                  className={`w-full p-3.5 rounded-2xl border text-xs md:text-sm font-bold text-left transition-all cursor-pointer ${
+                                    isMatched 
+                                      ? 'bg-red-500/10 border-red-500 text-red-600 line-through opacity-70' 
+                                      : isSelected 
+                                      ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white border-red-600 ring-4 ring-red-500/20' 
+                                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-red-400 text-slate-800 dark:text-slate-100'
+                                  }`}
+                                >
+                                  {pair.left}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Right items */}
+                          <div className="space-y-2">
+                            {shuffledRights.map((rightText, idx) => {
+                              const isMatched = Object.values(matchedPairs).includes(rightText);
+
+                              return (
+                                <button
+                                  key={idx}
+                                  disabled={isMatched || isAnswered || !selectedLeft}
+                                  onClick={() => handleSelectRightPair(rightText)}
+                                  className={`w-full p-3.5 rounded-2xl border text-xs md:text-sm font-medium text-left transition-all cursor-pointer ${
+                                    isMatched 
+                                      ? 'bg-red-500/10 border-red-500 text-red-600 opacity-70' 
+                                      : selectedLeft 
+                                      ? 'bg-amber-50/60 dark:bg-slate-800 border-amber-300 hover:border-red-500 text-slate-800 dark:text-slate-100' 
+                                      : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-60 text-slate-500'
+                                  }`}
+                                >
+                                  {rightText}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Question Content: LISTENING DRILL */}
+                    {currentStep.question.type === 'listening' && (
+                      <div className="space-y-4">
+                        <div className="bg-red-500/[0.04] border-2 border-red-500/20 p-8 rounded-3xl text-center space-y-4">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950/40 px-3 py-1 rounded-full">
+                            Diplomatic Audio Listening Drill (听力训练)
+                          </span>
+                          <h3 className="font-serif font-black text-xl text-slate-800 dark:text-white">
+                            {currentStep.question.question}
+                          </h3>
+
+                          <button
+                            onClick={() => speakDiplomaticSpeech(currentStep.question!.audioText!, currentStep.question!.audioLang)}
+                            className="px-6 py-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-sm font-black uppercase tracking-wider inline-flex items-center gap-3 shadow-xl shadow-red-600/25 transition-all cursor-pointer animate-pulse"
+                          >
+                            <Volume2 className="w-5 h-5" /> Putar Rekaman Sidang Mandarin (播放听力)
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {currentStep.question.options?.map((opt, idx) => {
+                            const isSelected = selectedOption === idx;
+                            const isCorrect = currentStep.question!.correctAnswer === idx;
+                            let style = "border-slate-200 dark:border-slate-800 bg-white dark:bg-[#18242f]";
+                            if (isAnswered) {
+                              if (isCorrect) style = "bg-red-500/10 border-red-500 text-red-600 dark:text-red-400 font-bold ring-2 ring-red-500/20";
+                              else if (isSelected) style = "bg-rose-500/10 border-rose-500 text-rose-600";
+                              else style = "opacity-40";
+                            }
+
+                            return (
+                              <button
+                                key={idx}
+                                disabled={isAnswered}
+                                onClick={() => handleSelectOption(idx)}
+                                className={`p-4 rounded-2xl border text-xs md:text-sm font-semibold transition-all text-left flex items-center justify-between ${style} cursor-pointer hover:border-red-500`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs flex items-center justify-center shrink-0">
+                                    {String.fromCharCode(65 + idx)}
+                                  </span>
+                                  <span className="text-slate-800 dark:text-slate-100">{opt}</span>
+                                </div>
+                                {isAnswered && isCorrect && <CheckCircle2 className="w-5 h-5 text-red-600 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Feedback & Proceed Footer for Question Step */}
+                    <AnimatePresence>
+                      {isAnswered && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="bg-slate-50 dark:bg-slate-900/60 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3"
+                        >
+                          <div className="flex items-start gap-3">
+                            <Lightbulb className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <h5 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                                Catatan Analisis Dosen & Duta Besar (外交官解析):
+                              </h5>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {currentStep.question.explanation}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right pt-2 border-t border-slate-200/50 dark:border-slate-800">
+                            <button
+                              onClick={handleNextStep}
+                              className="px-8 py-3.5 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-red-600/20 transition-all inline-flex items-center gap-2 cursor-pointer"
+                            >
+                              Lanjut ke Langkah Berikutnya <ArrowRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 )}
-              </AnimatePresence>
-
-              {/* Footer Button Bar */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                {isAnswered && (
-                  <button
-                    onClick={handleNextQuestion}
-                    className="px-8 py-4 bg-emerald-500 hover:bg-emerald-650 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-500/10 transition-all flex items-center gap-2 cursor-pointer"
-                  >
-                    {currentQuestionIdx === activeLesson.questions.length - 1 ? 'Selesaikan Kelas' : 'Pertanyaan Berikutnya'} <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          ) : (
-            // COMPLETE STAGE CELEBRATION SCREEN
-            <motion.div
-              key="complete"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="text-center py-8 space-y-6"
-            >
-              <div className="w-24 h-24 bg-gradient-to-tr from-amber-400 to-orange-500 text-white rounded-[2rem] flex items-center justify-center mx-auto shadow-xl shadow-orange-500/20 animate-bounce">
-                <Trophy className="w-12 h-12" />
-              </div>
-              
-              <div className="space-y-2">
-                <h3 className="font-serif text-3xl font-black text-slate-800 dark:text-white">Kelas Selesai! 🎉</h3>
-                <p className="text-xs text-orange-500 uppercase tracking-[0.25em] font-black">XIE XIE (谢谢) - SOLIDARITAS</p>
-                <p className="text-sm max-w-md mx-auto leading-relaxed text-slate-500 dark:text-slate-350 px-4">
-                  Selamat, kamu berhasil menaklukkan materi **{activeLesson.title}**! Ilmu komunikasi & lobi diplomatikmu terus berkembang.
-                </p>
-              </div>
-
-              {/* Stats Rewards */}
-              <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto p-2">
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4.5 rounded-3xl border border-orange-500/10 shadow-sm">
-                  <Star className="w-6 h-6 text-yellow-500 mx-auto mb-1 animate-pulse" />
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">XP Diperoleh</p>
-                  <p className="text-lg font-black text-orange-500">
-                    +{progress?.completedLessons.includes(activeLesson.id) ? 15 : activeLesson.xp} XP
-                  </p>
-                </div>
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4.5 rounded-3xl border border-orange-500/10 shadow-sm">
-                  <Flame className="w-6 h-6 text-orange-500 mx-auto mb-1" />
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Beruntun / Streak</p>
-                  <p className="text-lg font-black text-orange-500">{progress?.streak || 1} Hari</p>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <button
-                  onClick={() => {
-                    playSound('click');
-                    setActiveLesson(null);
-                  }}
-                  className="px-10 py-4.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all cursor-pointer"
-                >
-                  Kembali ke Peta Kurikulum
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
       </div>
     );
   }
 
-  // --- VIEW: CURRICULUM MAP & CANTEEN ---
+  // =========================================================================
+  // VIEW: MAIN DASHBOARD & CURRICULUM ROADMAP (16 STAGES IN 4 TIERS)
+  // =========================================================================
   return (
     <div className="space-y-6">
-      {/* Top App Bar with XP, Streak & Switcher */}
-      <div className="bg-white dark:bg-[#141e26] p-5 rounded-[2rem] border border-orange-100 dark:border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* User stats */}
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl border border-orange-200 bg-orange-500/10 flex items-center justify-center shrink-0 text-orange-500 font-bold">
+      {/* Top Banner with User Stats & Tabs */}
+      <div className="bg-white dark:bg-[#1a0f12] p-5 md:p-6 rounded-[2.5rem] border border-red-100 dark:border-red-950/60 shadow-xl flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+        {/* User Info */}
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <div className="w-14 h-14 rounded-2xl border-2 border-red-300 dark:border-red-800 bg-red-500/10 flex items-center justify-center shrink-0 text-red-600 font-bold overflow-hidden shadow-inner ring-2 ring-amber-400/30">
             {progress?.userPhoto ? (
-              <img src={progress.userPhoto} alt={progress.userName} className="w-full h-full object-cover rounded-2xl" />
+              <img src={progress.userPhoto} alt={progress.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              <User className="w-6 h-6" />
+              <User className="w-7 h-7" />
             )}
           </div>
-          <div>
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hubungan Internasional</h4>
-            <h3 className="font-serif text-base font-bold text-slate-800 dark:text-white truncate max-w-[180px]">{progress?.userName}</h3>
+          <div className="min-w-0 space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-amber-400 bg-red-50 dark:bg-red-950/40 px-2 py-0.5 rounded-md border border-red-500/20 inline-block">
+              Hubungan Internasional • Bahasa Mandarin Diplomasi (中文外交)
+            </span>
+            <h3 className="font-serif text-lg md:text-xl font-black text-slate-800 dark:text-white truncate">
+              {progress?.userName}
+            </h3>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
+              Pangkat: <span className="text-slate-700 dark:text-slate-200 font-semibold">{
+                (progress?.xp ?? 0) >= 800 ? 'Suhu Duta Besar Berkuasa Penuh (特命全权大使) 👑' :
+                (progress?.xp ?? 0) >= 450 ? 'Diplomat Senior DK PBB (常任理事国外交官) 🏛️' :
+                (progress?.xp ?? 0) >= 200 ? 'Atase Sidang Multilateral (多边外交随员) 🎖️' :
+                'Delegasi Muda HI (中文外交初学者) 🏮'
+              }</span>
+            </p>
           </div>
         </div>
 
-        {/* Global XP & Streak meters */}
-        <div className="flex items-center gap-4">
-          <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-2">
-            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500 animate-pulse" />
-            <div className="relative">
-              <span className="text-sm font-black text-slate-800 dark:text-white">{progress?.xp ?? 0}</span>
-              <span className="text-[9px] font-bold text-slate-400 block -mt-1">XP SKOR</span>
-              <AnimatePresence>
-                {xpDeductionAnim && (
-                  <motion.span 
-                    initial={{ opacity: 1, y: 0 }}
-                    animate={{ opacity: 0, y: -20 }}
-                    className="absolute -top-3 right-0 text-rose-500 text-xs font-black"
-                  >
-                    -20
-                  </motion.span>
-                )}
-              </AnimatePresence>
+        {/* Right Section: Meters & Tabs */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
+          {/* Meters */}
+          <div className="flex items-center gap-2.5">
+            <div className="bg-red-50/60 dark:bg-slate-900/60 px-4 py-2.5 rounded-2xl border border-red-100 dark:border-slate-800 flex items-center gap-2.5 shadow-sm">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-500 animate-pulse" />
+              <div className="relative">
+                <span className="text-base font-black text-slate-800 dark:text-white">{progress?.xp ?? 0}</span>
+                <span className="text-[9px] font-bold text-slate-400 block -mt-1">XP SKOR</span>
+                <AnimatePresence>
+                  {xpDeductionAnim && (
+                    <motion.span 
+                      initial={{ opacity: 1, y: 0 }}
+                      animate={{ opacity: 0, y: -20 }}
+                      className="absolute -top-3 right-0 text-red-500 text-xs font-black"
+                    >
+                      -XP
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <div className="bg-red-50/60 dark:bg-slate-900/60 px-4 py-2.5 rounded-2xl border border-red-100 dark:border-slate-800 flex items-center gap-2.5 shadow-sm">
+              <Flame className="w-4 h-4 text-amber-600 fill-amber-600 animate-bounce" />
+              <div>
+                <span className="text-base font-black text-slate-800 dark:text-white">{progress?.streak ?? 0}</span>
+                <span className="text-[9px] font-bold text-slate-400 block -mt-1">HARI STREAK</span>
+              </div>
             </div>
           </div>
 
-          <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-2">
-            <Flame className="w-4 h-4 text-orange-500 fill-orange-500 animate-bounce" />
-            <div>
-              <span className="text-sm font-black text-slate-800 dark:text-white">{progress?.streak ?? 0}</span>
-              <span className="text-[9px] font-bold text-slate-400 block -mt-1">HARI STREAK</span>
-            </div>
+          {/* Tab Buttons */}
+          <div className="bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl flex border border-slate-200/50 dark:border-slate-800 shadow-sm overflow-x-auto">
+            <button
+              onClick={() => { playSound('click'); setActiveTab('map'); }}
+              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeTab === 'map'
+                  ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md shadow-red-600/20'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+              }`}
+            >
+              <Compass className="w-4 h-4" /> Peta Stage (地图)
+            </button>
+            <button
+              onClick={() => { playSound('click'); setActiveTab('glossary'); }}
+              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeTab === 'glossary'
+                  ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md shadow-red-600/20'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" /> Kamus Glosarium (词典)
+            </button>
+            <button
+              onClick={() => { playSound('click'); setActiveTab('canteen'); }}
+              className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                activeTab === 'canteen'
+                  ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md shadow-red-600/20'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+              }`}
+            >
+              <Utensils className="w-4 h-4" /> Jamuan Diplomasi (国宴)
+            </button>
           </div>
-        </div>
-
-        {/* Tab Switcher buttons */}
-        <div className="bg-slate-100 dark:bg-slate-900/80 p-1 rounded-2xl flex border border-slate-200/50 dark:border-slate-800">
-          <button
-            onClick={() => { playSound('click'); setActiveTab('map'); }}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
-              activeTab === 'map'
-                ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/10'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            <Compass className="w-4 h-4" /> Peta Stage
-          </button>
-          <button
-            onClick={() => { playSound('click'); setActiveTab('canteen'); }}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
-              activeTab === 'canteen'
-                ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/10'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
-            }`}
-          >
-            <Utensils className="w-4 h-4" /> Kantin Kucing
-          </button>
         </div>
       </div>
 
-      {activeTab === 'map' ? (
-        // --- VIEW: DUOLINGO STYLE ROADMAP PATH ---
+      {/* ================= TAB 1: CURRICULUM ROADMAP ================= */}
+      {activeTab === 'map' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Main RPG Serpentine Stage Path */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white dark:bg-[#141e26] p-6 rounded-[2.5rem] border border-orange-100 dark:border-slate-800 shadow-xl relative">
-              <div className="absolute top-4 right-4 animate-pulse bg-orange-500/10 text-orange-500 text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-full border border-orange-500/20">
-                12 Level Aktif 🗺️
-              </div>
-
-              <div className="flex items-center gap-2.5 mb-8">
-                <Compass className="w-6 h-6 text-orange-500 animate-spin" />
-                <div>
-                  <h3 className="font-serif font-black text-xl text-slate-800 dark:text-white">Kurikulum Mandarin Diplomasi</h3>
-                  <p className="text-xs text-slate-400">Pilih stage unlocked untuk mengasah lobi, pidato, dan taktik HI.</p>
-                </div>
-              </div>
-
-              {/* RPG Winding Path Grid */}
-              <div className="space-y-6 py-6 max-w-lg mx-auto relative px-4">
-                {/* Visual curving connector background line */}
-                <div className="absolute top-12 bottom-12 left-1/2 -translate-x-1/2 w-1.5 bg-gradient-to-b from-orange-400 via-amber-400 to-emerald-500 -z-0 rounded-full opacity-30" />
-
-                {LESSONS.map((lesson, index) => {
-                  const isCompleted = progress?.completedLessons?.includes(lesson.id);
-                  const isFirst = index === 0;
-                  const isPrevCompleted = index > 0 ? progress?.completedLessons?.includes(LESSONS[index - 1].id) : true;
-                  const isUnlocked = isFirst || isPrevCompleted || isAdmin;
-                  const isCurrent = isUnlocked && !isCompleted;
-
-                  // Serpentine S-Curve Position offsets: Left, Center, Right, Center, Repeat
-                  const offsets = [
-                    "justify-start sm:pl-12",
-                    "justify-center",
-                    "justify-end sm:pr-12",
-                    "justify-center"
-                  ];
-                  const offsetClass = offsets[index % 4];
-                  const mentor = MENTORS[lesson.catMentor];
-
-                  return (
-                    <div key={lesson.id} className={`flex w-full ${offsetClass} relative z-10`}>
-                      <div className="relative group">
-                        {/* Dynamic Floating Speech Bubble for Unlocked but Not Completed Level */}
-                        {isCurrent && (
-                          <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black text-[9px] px-3 py-1.5 rounded-xl shadow-lg border border-white/20 whitespace-nowrap animate-[bounce_2s_infinite]">
-                            SINI AJARIN! 😾
-                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-amber-500 rotate-45 border-r border-b border-white/20" />
-                          </div>
-                        )}
-
-                        {/* Interactive Node Button */}
-                        <button
-                          onClick={() => {
-                            if (!user) {
-                              (window as any).showAuthError?.('unauthenticated');
-                              return;
-                            }
-                            if (isUnlocked) {
-                              playSound('click');
-                              setPreviewLesson(lesson);
-                            } else {
-                              playSound('incorrect');
-                              alert("Mew! Stage ini masih terkunci. Selesaikan materi sebelumnya terlebih dahulu!");
-                            }
-                          }}
-                          className={`w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all ${
-                            isCompleted 
-                              ? 'bg-gradient-to-br from-emerald-400 to-green-500 text-white shadow-lg shadow-emerald-500/20 scale-100 hover:scale-105 hover:ring-4 hover:ring-emerald-400/20' 
-                              : isCurrent
-                              ? 'bg-gradient-to-br from-orange-400 to-amber-500 text-white shadow-xl shadow-orange-500/30 scale-110 hover:scale-115 ring-4 ring-orange-500/20 animate-[pulse_1.5s_infinite]'
-                              : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border-2 border-slate-300 dark:border-slate-700'
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <CheckCircle className="w-8 h-8 drop-shadow" />
-                          ) : isUnlocked ? (
-                            <div className="flex flex-col items-center leading-none">
-                              <span className="text-[9px] font-black uppercase opacity-85">Stage</span>
-                              <span className="text-xl font-black">{index + 1}</span>
-                            </div>
-                          ) : (
-                            <Lock className="w-6 h-6" />
-                          )}
-                        </button>
-
-                        {/* Floating Micro Cat Head above Node */}
-                        {isUnlocked && (
-                          <div className="absolute -bottom-3 -right-3 w-8 h-8 bg-white dark:bg-slate-800 rounded-full border-2 border-orange-400 overflow-hidden shadow">
-                            <img src={mentor.imageUrl} alt={mentor.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          </div>
-                        )}
-                        
-                        {/* Hover Level Name Indicator */}
-                        <div className="absolute top-1/2 -translate-y-1/2 left-24 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/50 p-2.5 rounded-2xl shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300 whitespace-nowrap z-50">
-                          <p className="text-[8px] font-black text-orange-500 uppercase tracking-widest leading-none">Level {index + 1}</p>
-                          <h5 className="font-serif text-xs font-bold text-slate-800 dark:text-white mt-0.5">{lesson.title}</h5>
-                          <p className="text-[9px] text-slate-400 italic">Hadiah: +{lesson.xp} XP</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          {/* Main Road Map */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Tier Filter Badges */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => { playSound('click'); setSelectedTier('all'); }}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  selectedTier === 'all'
+                    ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900 shadow-md'
+                    : 'bg-white dark:bg-[#1a0f12] text-slate-500 border border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                Semua Level (16 Stage)
+              </button>
+              {TIERS.map((t) => (
+                <button
+                  key={t.tier}
+                  onClick={() => { playSound('click'); setSelectedTier(t.tier); }}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                    selectedTier === t.tier
+                      ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md shadow-red-600/20'
+                      : 'bg-white dark:bg-[#1a0f12] text-slate-500 border border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  Tier {t.tier}
+                </button>
+              ))}
             </div>
+
+            {/* Stages Grouped by Tier */}
+            {TIERS.filter(t => selectedTier === 'all' || selectedTier === t.tier).map((tierData) => {
+              const tierLessons = LESSONS.filter(l => l.tier === tierData.tier);
+
+              return (
+                <div key={tierData.tier} className="bg-white dark:bg-[#1a0f12] p-6 md:p-8 rounded-[2.5rem] border border-red-100 dark:border-red-950/60 shadow-xl space-y-6">
+                  {/* Tier Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-red-100/60 dark:border-slate-800">
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-red-600 dark:text-amber-400">
+                        {tierData.subtitle}
+                      </span>
+                      <h3 className="font-serif font-black text-xl text-slate-800 dark:text-white">
+                        {tierData.title}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 max-w-lg leading-relaxed">
+                        {tierData.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Stage Winding Path */}
+                  <div className="space-y-6 py-4 max-w-md mx-auto relative px-4">
+                    <div className="absolute top-8 bottom-8 left-1/2 -translate-x-1/2 w-1.5 bg-gradient-to-b from-red-500 via-rose-500 to-amber-500 -z-0 rounded-full opacity-25" />
+
+                    {tierLessons.map((lesson, localIdx) => {
+                      const globalIdx = LESSONS.findIndex(l => l.id === lesson.id);
+                      const isCompleted = progress?.completedLessons?.includes(lesson.id);
+                      const isFirst = globalIdx === 0;
+                      const isPrevCompleted = globalIdx > 0 ? progress?.completedLessons?.includes(LESSONS[globalIdx - 1].id) : true;
+                      const isUnlocked = isFirst || isPrevCompleted || isAdmin;
+                      const isCurrent = isUnlocked && !isCompleted;
+
+                      const offsets = [
+                        "justify-start sm:pl-10",
+                        "justify-center",
+                        "justify-end sm:pr-10",
+                        "justify-center"
+                      ];
+                      const offsetClass = offsets[localIdx % 4];
+                      const mentor = CAT_MENTORS[lesson.catMentor];
+
+                      return (
+                        <div key={lesson.id} className={`flex w-full ${offsetClass} relative z-10`}>
+                          <div className="relative group">
+                            {isCurrent && (
+                              <div className="absolute -top-11 left-1/2 -translate-x-1/2 bg-gradient-to-r from-red-600 to-amber-600 text-white font-black text-[9px] px-3 py-1.5 rounded-xl shadow-lg border border-amber-300/30 whitespace-nowrap animate-[bounce_2s_infinite]">
+                                SIAP BELAJAR! 🏮 开始学习
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-amber-600 rotate-45 border-r border-b border-amber-300/30" />
+                              </div>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                if (isUnlocked) {
+                                  playSound('click');
+                                  setPreviewLesson(lesson);
+                                } else {
+                                  playSound('incorrect');
+                                  alert("Materi ini masih terkunci! Selesaikan stage sebelumnya untuk membuka kunci.");
+                                }
+                              }}
+                              className={`w-20 h-20 rounded-full flex flex-col items-center justify-center transition-all cursor-pointer ${
+                                isCompleted 
+                                  ? 'bg-gradient-to-br from-red-600 via-rose-600 to-amber-600 text-white shadow-lg shadow-red-600/20 scale-100 hover:scale-105 hover:ring-4 hover:ring-red-400/20' 
+                                  : isCurrent
+                                  ? 'bg-gradient-to-br from-red-600 to-amber-500 text-white shadow-xl shadow-red-600/30 scale-110 hover:scale-115 ring-4 ring-amber-400/30 animate-[pulse_1.5s_infinite]'
+                                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border-2 border-slate-300 dark:border-slate-700'
+                              }`}
+                            >
+                              {isCompleted ? (
+                                <CheckCircle2 className="w-8 h-8 drop-shadow text-amber-300" />
+                              ) : isUnlocked ? (
+                                <div className="flex flex-col items-center leading-none">
+                                  <span className="text-[9px] font-black uppercase opacity-80">Stage</span>
+                                  <span className="text-xl font-black">{lesson.stageNumber}</span>
+                                </div>
+                              ) : (
+                                <Lock className="w-6 h-6" />
+                              )}
+                            </button>
+
+                            {/* Cat Avatar Badge */}
+                            {isUnlocked && (
+                              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-white dark:bg-slate-800 rounded-full border-2 border-red-500 overflow-hidden shadow ring-2 ring-amber-400/20">
+                                <img src={mentor.imageUrl} alt={mentor.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                            )}
+
+                            {/* Floating Tooltip Label */}
+                            <div className="absolute top-1/2 -translate-y-1/2 left-24 bg-white dark:bg-slate-800 border border-red-100 dark:border-slate-700/50 p-3 rounded-2xl shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300 whitespace-nowrap z-50">
+                              <p className="text-[8px] font-black text-red-600 uppercase tracking-widest leading-none">
+                                Level {lesson.stageNumber} • {lesson.difficulty}
+                              </p>
+                              <h5 className="font-serif text-xs font-bold text-slate-800 dark:text-white mt-0.5">{lesson.title}</h5>
+                              <p className="text-[9px] text-slate-400 italic">Hadiah: +{lesson.xp} XP</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Interactive Sidebar: Leaderboard & Previews */}
-          <div className="space-y-4">
-            {/* STAGE DESCRIPTION DIALOG PREVIEW CARD */}
+          {/* Right Sidebar: Preview Card & Leaderboard */}
+          <div className="space-y-6">
+            {/* Preview Card */}
             <AnimatePresence>
               {previewLesson && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                  className="bg-white dark:bg-[#141e26] p-5 rounded-[2rem] border-2 border-orange-400 shadow-2xl space-y-4 relative overflow-hidden"
+                  className="bg-white dark:bg-[#1a0f12] p-6 rounded-[2.5rem] border-2 border-red-500 shadow-2xl space-y-5 relative overflow-hidden"
                 >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-orange-400/10 blur-2xl rounded-full" />
-                  
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-orange-500 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20">
-                      Mulai Pelajaran
+                    <span className="text-[9px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
+                      Stage {previewLesson.stageNumber} • {previewLesson.tierLabel}
                     </span>
                     <button 
                       onClick={() => setPreviewLesson(null)}
-                      className="text-xs font-bold text-slate-400 hover:text-red-500"
+                      className="text-xs font-bold text-slate-400 hover:text-red-500 cursor-pointer"
                     >
                       Batal
                     </button>
                   </div>
 
-                  {/* Mentor welcoming portrait */}
-                  <div className="flex gap-4 items-center bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <div className="flex gap-4 items-center bg-slate-50 dark:bg-slate-900/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800">
                     <CatMemeAvatar 
-                      type={MENTORS[previewLesson.catMentor].overlayType} 
-                      imageUrl={MENTORS[previewLesson.catMentor].imageUrl} 
+                      type={CAT_MENTORS[previewLesson.catMentor].overlayType} 
+                      imageUrl={CAT_MENTORS[previewLesson.catMentor].imageUrl} 
                       className="w-14 h-14"
                     />
                     <div>
-                      <h4 className="font-serif font-bold text-xs leading-none">{MENTORS[previewLesson.catMentor].name}</h4>
-                      <p className="text-[9px] text-slate-400 mt-0.5">{MENTORS[previewLesson.catMentor].role}</p>
-                      <p className="text-[10px] text-orange-500 italic font-medium mt-1 leading-relaxed">
-                        “{MENTORS[previewLesson.catMentor].catchphrase}”
+                      <h4 className="font-serif font-bold text-xs leading-none text-slate-800 dark:text-white">
+                        {CAT_MENTORS[previewLesson.catMentor].name}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 mt-0.5">{CAT_MENTORS[previewLesson.catMentor].role}</p>
+                      <p className="text-[10px] text-red-600 dark:text-amber-400 italic font-medium mt-1 leading-relaxed">
+                        “{CAT_MENTORS[previewLesson.catMentor].catchphrase}”
                       </p>
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="font-serif font-black text-lg text-slate-800 dark:text-white leading-tight">
+                    <h3 className="font-serif font-black text-lg text-slate-800 dark:text-white leading-snug">
                       {previewLesson.title}
                     </h3>
                     <p className="text-xs text-slate-400 leading-relaxed">
@@ -1471,183 +1703,135 @@ export default function InterLingo({ user, isAdmin }: { user: any; isAdmin: bool
                   </div>
 
                   <div className="bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl flex items-center justify-between text-xs font-bold">
-                    <span className="text-slate-400">Total Hadiah</span>
-                    <span className="text-orange-500 font-black">+{previewLesson.xp} XP</span>
+                    <span className="text-slate-400">Total Hadiah XP</span>
+                    <span className="text-red-600 font-black">+{previewLesson.xp} XP</span>
                   </div>
 
+                  {/* Single Unified Start Button */}
                   <button
-                    onClick={() => handleStartLesson(previewLesson)}
-                    className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-orange-500/10 transition-all flex items-center justify-center gap-2"
+                    onClick={() => handleOpenLesson(previewLesson)}
+                    className="w-full py-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer animate-pulse"
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" /> Mulai Belajar Sekarang
+                    <Play className="w-4 h-4 fill-current" /> Mulai Sesi Diplomasi (Level {previewLesson.stageNumber})
                   </button>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Global Leaderboard Panel */}
-            <div className="bg-white dark:bg-[#141e26] p-5 rounded-[2rem] border border-orange-100 dark:border-slate-800 shadow-xl">
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+            {/* Leaderboard */}
+            <div className="bg-white dark:bg-[#1a0f12] p-6 rounded-[2.5rem] border border-red-100 dark:border-red-950/60 shadow-xl space-y-4">
+              <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <Trophy className="w-5 h-5 text-amber-500 animate-bounce" />
                 <div>
-                  <h3 className="font-serif font-bold text-sm text-slate-800 dark:text-white">Klasemen Kelas InterLingo</h3>
-                  <p className="text-[9px] text-slate-400">Peringkat akumulasi seluruh mahasiswa Hubungan Internasional.</p>
+                  <h3 className="font-serif font-bold text-sm text-slate-800 dark:text-white">Klasemen Diplomat InterLingo</h3>
+                  <p className="text-[9px] text-slate-400">Peringkat delegasi & mahasiswa Mandarin HI teraktif.</p>
                 </div>
               </div>
 
-              <div className="space-y-2.5 max-h-[290px] overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
                 {leaderboard.map((lead, idx) => (
                   <div
                     key={lead.userId}
                     className={`p-3 rounded-2xl flex items-center justify-between ${
                       lead.userId === user?.uid 
-                        ? 'bg-orange-500/10 border border-orange-500/30' 
+                        ? 'bg-red-500/10 border border-red-500/30' 
                         : 'bg-slate-50/50 dark:bg-slate-900/20'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-6 text-center">
-                        {idx === 0 ? (
-                          <span className="text-lg">🥇</span>
-                        ) : idx === 1 ? (
-                          <span className="text-lg">🥈</span>
-                        ) : idx === 2 ? (
-                          <span className="text-lg">🥉</span>
-                        ) : (
-                          <span className="text-[10px] font-black text-slate-400">#{idx + 1}</span>
-                        )}
-                      </div>
+                      <span className="w-5 text-center font-black text-xs text-slate-400">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                      </span>
 
-                      {/* Avatar */}
-                      <div className="w-8 h-8 rounded-full border border-orange-200/50 overflow-hidden bg-slate-200 shrink-0">
+                      <div className="w-8 h-8 rounded-full border border-red-200 overflow-hidden bg-slate-200 shrink-0">
                         {lead.userPhoto ? (
                           <img src={lead.userPhoto} alt={lead.userName} className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-orange-50 text-orange-500">
+                          <div className="w-full h-full flex items-center justify-center bg-red-50 text-red-600">
                             <User className="w-4 h-4" />
                           </div>
                         )}
                       </div>
 
-                      {/* Name */}
                       <span className="text-xs font-bold truncate max-w-[110px] text-slate-700 dark:text-slate-200">
                         {lead.userName}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xs font-black text-orange-500">{lead.xp} XP</span>
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span className="text-xs font-black text-red-600 dark:text-amber-400">{lead.xp} XP</span>
                     </div>
                   </div>
                 ))}
-
-                {leaderboard.length === 0 && (
-                  <p className="text-center text-xs text-slate-400 py-6 italic">Belum ada skor terekam.</p>
-                )}
               </div>
             </div>
           </div>
         </div>
-      ) : (
-        // --- VIEW: CAT CANTEEN (FEED THE CAT MINIGAME) ---
-        <div className="bg-white dark:bg-[#141e26] p-6 md:p-8 rounded-[2.5rem] border border-orange-100 dark:border-slate-800 shadow-xl space-y-6">
+      )}
+
+      {/* ================= TAB 2: COMPLETE GLOSSARY & FLASHCARD VAULT ================= */}
+      {activeTab === 'glossary' && (
+        <div className="bg-white dark:bg-[#1a0f12] p-6 md:p-8 rounded-[2.5rem] border border-red-100 dark:border-red-950/60 shadow-xl space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <span className="text-[9px] font-black uppercase tracking-widest text-orange-500 px-3 py-1 bg-orange-500/10 rounded-full">
-                Kantin Kucing MandarIn 🐟
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-red-600 dark:text-amber-400 px-3 py-1 rounded-full bg-red-500/10">
+                Pusat Kosa Kata & Frasa Diplomatik Mandarin 📚
               </span>
-              <h3 className="font-serif font-black text-2xl text-slate-800 dark:text-white mt-2">Uji Keramahan Bilateral</h3>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
-                Beri makan para Kucing Mentor favoritmu menggunakan XP-mu untuk mendengarkan terima kasih Mandarin yang lucu dan memicu ledakan hati! Setiap hidangan berbiaya **20 XP**.
+              <h3 className="font-serif font-black text-2xl text-slate-800 dark:text-white mt-2">
+                Kamus Traktat & Kosakata Mandarin Diplomasi (中文外交与国际关系词典)
+              </h3>
+              <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+                Koleksi lengkap istilah diplomasi resmi bahasa Mandarin (Hanzi, Pinyin & Terjemahan Resmi) dari seluruh 16 Stage InterLingo.
               </p>
             </div>
-
-            <div className="bg-orange-500/5 border border-orange-500/20 px-5 py-3 rounded-2xl text-center shrink-0">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">XP Kamu</p>
-              <p className="text-2xl font-black text-orange-500">{progress?.xp ?? 0} XP</p>
-            </div>
           </div>
 
-          {/* Dialog Bubble for Feeding Event */}
-          <AnimatePresence>
-            {feedingBubble && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-emerald-500/10 border-2 border-emerald-500/30 rounded-2xl p-4 text-center text-xs md:text-sm font-bold text-emerald-600 dark:text-emerald-400 shadow-lg"
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {LESSONS.flatMap(l => l.studyCards.map(c => ({ ...c, lessonTitle: l.title, stage: l.stageNumber }))).map((card) => (
+              <div
+                key={card.id}
+                className="bg-slate-50/70 dark:bg-slate-900/40 p-5 rounded-3xl border border-red-100 dark:border-slate-800 space-y-3 hover:border-red-400 transition-all flex flex-col justify-between"
               >
-                {feedingBubble}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Mentors Feed Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {Object.values(MENTORS).map((cat) => {
-              const isFed = fedCatId === cat.id;
-
-              return (
-                <div
-                  key={cat.id}
-                  className={`p-5 rounded-3xl border transition-all flex flex-col items-center text-center space-y-4 relative overflow-hidden ${
-                    isFed 
-                      ? 'bg-emerald-500/5 border-emerald-400 shadow-emerald-500/10 scale-102 shadow-lg ring-4 ring-emerald-400/20' 
-                      : 'bg-slate-50/50 hover:bg-orange-500/[0.02] dark:bg-slate-900/40 border-slate-100 dark:border-slate-800'
-                  }`}
-                >
-                  {/* Floating Heart Particle Explosion on Feed */}
-                  <AnimatePresence>
-                    {isFed && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                        <motion.div 
-                          initial={{ scale: 0, opacity: 1 }}
-                          animate={{ scale: [1, 2.5], opacity: 0 }}
-                          className="text-red-500 text-5xl"
-                        >
-                          ❤️
-                        </motion.div>
-                        <motion.div 
-                          initial={{ scale: 0, opacity: 1 }}
-                          animate={{ scale: [1.2, 3], opacity: 0 }}
-                          transition={{ delay: 0.15 }}
-                          className="text-pink-500 text-3xl absolute"
-                        >
-                          🌸
-                        </motion.div>
-                      </div>
-                    )}
-                  </AnimatePresence>
-
-                  <CatMemeAvatar 
-                    type={cat.overlayType} 
-                    imageUrl={cat.imageUrl} 
-                    className="w-24 h-24"
-                    talking={isFed}
-                  />
-
-                  <div className="space-y-1">
-                    <h4 className="font-serif font-black text-sm text-slate-800 dark:text-white leading-tight">
-                      {cat.name}
-                    </h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{cat.role}</p>
-                    <p className="text-xs text-slate-500 leading-relaxed italic max-w-[200px]">
-                      “{cat.catchphrase}”
-                    </p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[8px] font-black uppercase text-slate-400">
+                    <span>Stage {card.stage}</span>
+                    <span className="text-red-600 bg-red-500/10 px-2 py-0.5 rounded-full">{card.tag}</span>
                   </div>
 
-                  <button
-                    onClick={() => handleFeedCat(cat.id)}
-                    className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
-                  >
-                    <Gift className="w-4 h-4" /> Beri Makan 🐟
-                  </button>
+                  <h4 className="font-serif font-black text-xl text-slate-800 dark:text-white leading-snug">
+                    {card.term}
+                  </h4>
+                  {card.transliteration && (
+                    <p className="text-xs font-mono text-red-600 dark:text-amber-400 font-bold">{card.transliteration}</p>
+                  )}
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{card.meaning}</p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed italic">{card.contextHI}</p>
                 </div>
-              );
-            })}
+
+                <div className="pt-2 border-t border-slate-200/40 dark:border-slate-800 flex items-center justify-between">
+                  <button
+                    onClick={() => speakDiplomaticSpeech(card.audioText, card.audioLang)}
+                    className="p-2 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" /> Lafal
+                  </button>
+                  <span className="text-[9px] text-slate-400 font-mono uppercase">{card.audioLang}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+      )}
+
+      {/* ================= TAB 3: CAT CANTEEN & STATE BANQUET ================= */}
+      {activeTab === 'canteen' && (
+        <CatCanteen
+          user={user}
+          userXp={progress?.xp ?? 0}
+          onXpChange={(newXp) => setProgress(prev => prev ? { ...prev, xp: newXp } : prev)}
+          playSound={playSound}
+        />
       )}
     </div>
   );

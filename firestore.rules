@@ -126,10 +126,14 @@ service cloud.firestore {
       allow update, delete: if isMember() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // InterLingo Progress
+    // InterLingo Progress & Cat Canteen Feeds
     match /interlingo_progress/{progressId} {
       allow read: if true;
       allow write: if isMember() && progressId == request.auth.uid;
+    }
+    match /interlingo_cat_feeds/{feedId} {
+      allow read: if true;
+      allow write: if isMember();
     }
 
     // Auto Paham Chat Threads (Isolated per user)

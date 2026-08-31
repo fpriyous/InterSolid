@@ -8,7 +8,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 
 dotenv.config();
 
@@ -797,6 +797,83 @@ Wajib menghasilkan output valid JSON murni tanpa awalan/akhiran apapun:
       console.error('[AI Bypass Error]:', error);
       return res.status(500).json({
         error: error.message || 'Terjadi kesalahan saat memproses perintah AI Bypass.',
+        status: 'error'
+      });
+    }
+  });
+
+  // Multi-Model AI Neural Text-to-Speech (TTS) Endpoint
+  app.post(['/api/tts', '/tts'], async (req: any, res: any) => {
+    try {
+      const { 
+        text, 
+        voice = 'Kore', 
+        persona = 'diplomat', 
+        promptPrefix = '', 
+        model = 'gemini-3.1-flash-tts-preview' 
+      } = req.body;
+
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ error: 'Text string is required', status: 'error' });
+      }
+
+      const cleanText = text.trim();
+      const ai = getGeminiClient();
+
+      // Supported Gemini voices: 'Charon', 'Puck', 'Kore', 'Fenrir', 'Zephyr', 'Aoede'
+      const validVoices = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Zephyr', 'Aoede'];
+      const targetVoice = validVoices.includes(voice) ? voice : 'Kore';
+
+      // Build expressive prompt based on persona or context
+      let promptInstruction = cleanText;
+      if (promptPrefix && promptPrefix.trim()) {
+        promptInstruction = `${promptPrefix.trim()}: ${cleanText}`;
+      } else if (persona === 'baritone_warlord') {
+        promptInstruction = `Speak with a commanding, deep baritone, authoritative cat leader tone: ${cleanText}`;
+      } else if (persona === 'hyperactive_vtuber') {
+        promptInstruction = `Speak with high energy, lively, playful, and cheerful cadence: ${cleanText}`;
+      } else if (persona === 'sigma_cold') {
+        promptInstruction = `Speak with a calm, stoic, confident, and low smooth tone: ${cleanText}`;
+      } else if (persona === 'warm_diplomat') {
+        promptInstruction = `Speak with an elegant, warm, polite diplomatic tone: ${cleanText}`;
+      } else {
+        promptInstruction = `Read the following with natural inflection and clear pronunciation: ${cleanText}`;
+      }
+
+      console.log(`[TTS Generation] Model: ${model}, Voice: ${targetVoice}, Persona: ${persona}, Length: ${cleanText.length} chars`);
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-tts-preview',
+        contents: [{ parts: [{ text: promptInstruction }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: targetVoice },
+            },
+          },
+        },
+      });
+
+      const audioPart = response.candidates?.[0]?.content?.parts?.[0];
+      const audioBase64 = audioPart?.inlineData?.data;
+      const mimeType = audioPart?.inlineData?.mimeType || 'audio/pcm;rate=24000';
+
+      if (!audioBase64) {
+        throw new Error('Tidak ada output audio yang diterima dari model Gemini TTS.');
+      }
+
+      return res.json({
+        audioBase64,
+        mimeType,
+        voice: targetVoice,
+        sampleRate: 24000,
+        status: 'success'
+      });
+    } catch (error: any) {
+      console.error('[TTS Generation Error]:', error);
+      return res.status(500).json({
+        error: error.message || 'Terjadi kesalahan saat memproses model suara TTS.',
         status: 'error'
       });
     }
