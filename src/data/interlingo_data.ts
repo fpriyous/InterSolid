@@ -133,11 +133,11 @@ export const CAT_MENTORS: Record<string, CatMentor> = {
   },
   diplomat: {
     id: 'diplomat',
-    name: 'Lord Li Seblak Rafael Lv.100 (李大帅)',
+    name: 'Lord Li Seblak Laily Lv.100 (李大帅)',
     role: 'Atase Gastrodiplomasi Seblak Mercon & Negosiator Gencatan Senjata',
     imageUrl: 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?auto=format&fit=crop&q=80&w=400',
     overlayType: 'paw',
-    catchphrase: 'Diplomasi itu ibarat seblak Rafael level 100: pedas, bikin nangis, tapi semua delegasi minta nambah! 一言九鼎!',
+    catchphrase: 'Diplomasi itu ibarat seblak Laily level 100: pedas, bikin nangis, tapi semua delegasi minta nambah! 一言九鼎!',
     color: 'from-amber-500 via-red-600 to-rose-700',
     institution: 'Direktorat Gastrodiplomasi Meja Hijau & Cobek Panas',
     tukangSuaraTitle: 'Dubber: Bangsawan Aristokrat Mewah (Dramatic Tenor)',
@@ -152,7 +152,7 @@ export const CAT_MENTORS: Record<string, CatMentor> = {
     },
     feedingVoices: [
       {
-        speech: 'Meeooww~ Nǐ hǎo ya duta besar! Seblak Rafael level 100 ini sukses melunakkan hati para negosiator Dewan Keamanan!',
+        speech: 'Meeooww~ Nǐ hǎo ya duta besar! Seblak Laily level 100 ini sukses melunakkan hati para negosiator Dewan Keamanan!',
         subtext: '“Meeooww~ Seblak cobek panas ini mengamankan kesepakatan bilateral!” 🌶️🥣',
         hanzi: '辣味外交，一言九鼎！(Làwèi wàijiāo, yī yán jiǔ dǐng!)'
       },

@@ -23,8 +23,8 @@ export const CANTEEN_DISHES: CanteenDish[] = [
     flavorText: 'Kulitnya renyah krispi, membuat resolusi DK PBB disahkan tanpa veto!'
   },
   {
-    id: 'seblak_rafael',
-    name: 'Seblak Ceker Rafael Lv.100',
+    id: 'seblak_laily',
+    name: 'Seblak Ceker Laily Lv.100',
     hanzi: '百级麻辣爪 (Bǎi Jí Málà Zhuǎ)',
     desc: 'Pedas merconnya setara tensi embargo minyak & perang tarif multilateral.',
     icon: '🌶️',
@@ -45,15 +45,15 @@ export const CANTEEN_DISHES: CanteenDish[] = [
     flavorText: 'Manis legitnya menyegarkan diplomasi meja makan tingkat tinggi!'
   },
   {
-    id: 'jiaozi',
-    name: 'Jiaozi Damai Abadi',
+    id: 'jiaozi_mentai',
+    name: 'Jiaozi Dimas Mentai',
     hanzi: '和平水饺 (Hépíng Shuǐjiǎo)',
-    desc: 'Pangsit montok berkulit tipis isi udang simbol aliansi strategis.',
+    desc: 'Pangsit montok berkulit tipis berbalut saus mentai gurih simbol aliansi strategis.',
     icon: '🥟',
     cost: 20,
     crunchType: 'munch',
     buffEffect: '+50 Harmoni Traktat',
-    flavorText: 'Satu suapan mempererat persahabatan 200 negara anggota PBB!'
+    flavorText: 'Satu suapan mentai mempererat persahabatan 200 negara anggota PBB!'
   },
   {
     id: 'cilok_traktat',
@@ -68,9 +68,9 @@ export const CANTEEN_DISHES: CanteenDish[] = [
   },
   {
     id: 'longjing_tea',
-    name: 'Teh Hijau Longjing Oyen',
+    name: 'Teh Hijau Longjing Abena',
     hanzi: '西湖龙井茶 (Xīhú Lóngjǐng Chá)',
-    desc: 'Dipetik langsung saat Prof. Oyen tertidur pulas di kebun teh Hangzhou.',
+    desc: 'Dipetik langsung saat delegasi Abena beristirahat di kebun teh Hangzhou.',
     icon: '🍵',
     cost: 15,
     crunchType: 'soup_sip',

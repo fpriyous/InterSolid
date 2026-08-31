@@ -78,7 +78,7 @@ export const VOICE_MODELS: VoiceModelOption[] = [
     geminiVoice: 'Aoede',
     description: 'Suara aristokrat ceria, bernada estetis, dan santun ningrat.',
     tag: 'Aristocrat Tenor',
-    recommendedFor: 'Lord Li Seblak Rafael',
+    recommendedFor: 'Lord Li Seblak Laily',
     avatarIcon: '🌶️'
   },
   {

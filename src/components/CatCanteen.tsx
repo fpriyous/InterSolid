@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react';
 import { 
   Trophy, Sparkles, Heart, Utensils, Star, Flame, 
   Volume2, Gift, User, Crown, ChevronRight, Award, 
-  Smile, Zap, CheckCircle, RefreshCw, AlertCircle,
-  Radio, Sliders, Mic, Play, Pause, X, Music
+  Smile, Zap, CheckCircle, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CAT_MENTORS, CatMentor } from '../data/interlingo_data';
@@ -14,11 +13,7 @@ import {
   playFoodSound, 
   speakCatVoiceLine,
   VOICE_MODELS,
-  VoiceModelOption,
-  getSavedVoiceModel,
-  saveVoiceModel,
-  testAuditionVoiceModel,
-  stopAllAudioPlayback
+  getSavedVoiceModel
 } from '../lib/cat_audio_engine';
 import { db, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { 
@@ -38,10 +33,8 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
   const [activeSubTab, setActiveSubTab] = useState<'feeding' | 'leaderboard'>('feeding');
   const [leaderboardFilter, setLeaderboardFilter] = useState<string>('all');
 
-  // Voice Model State
-  const [activeVoiceModelId, setActiveVoiceModelId] = useState<string>(getSavedVoiceModel());
-  const [showVoiceStudioModal, setShowVoiceStudioModal] = useState<boolean>(false);
-  const [isAuditioningId, setIsAuditioningId] = useState<string | null>(null);
+  // State
+  const [activeVoiceModelId] = useState<string>(getSavedVoiceModel());
   const [speakingCatId, setSpeakingCatId] = useState<string | null>(null);
   
   // Real-time feeds state
@@ -141,24 +134,6 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
       return feedRecords.filter(r => r.catId === leaderboardFilter);
     }
   }, [feedRecords, leaderboardFilter]);
-
-  // Switch voice model
-  const handleSelectVoiceModel = (modelId: string) => {
-    playSound('click');
-    setActiveVoiceModelId(modelId);
-    saveVoiceModel(modelId);
-  };
-
-  // Audition voice model
-  const handleAuditionModel = async (model: VoiceModelOption) => {
-    playSound('click');
-    setIsAuditioningId(model.id);
-    try {
-      await testAuditionVoiceModel(model);
-    } finally {
-      setIsAuditioningId(null);
-    }
-  };
 
   // Handle feeding a cat
   const handleFeedAction = async (cat: CatMentor, dish: CanteenDish) => {
@@ -310,16 +285,6 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
               <span className="bg-red-600/80 text-amber-300 font-serif font-black text-[10px] uppercase px-3 py-1 rounded-full border border-amber-400/40 shadow-sm inline-flex items-center gap-1.5">
                 <Utensils className="w-3.5 h-3.5" /> Kantin Kucing Absurd & Jamuan Kenegaraan (外交国宴)
               </span>
-              
-              {/* Voice Studio Active Pill */}
-              <button
-                onClick={() => { playSound('click'); setShowVoiceStudioModal(true); }}
-                className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-mono text-[10px] font-bold px-3 py-1 rounded-full border border-amber-400/40 shadow-sm inline-flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95"
-              >
-                <Mic className="w-3 h-3 text-amber-400 animate-pulse" />
-                <span className="truncate max-w-[170px]">{currentVoiceModel.name}</span>
-                <Sliders className="w-3 h-3 opacity-70" />
-              </button>
 
               {comboCount > 1 && (
                 <motion.span 
@@ -337,22 +302,11 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
               Pemberian Makanan & Dewan Keamanan Kucing Oyen
             </h2>
             <p className="text-xs text-amber-200/80 leading-relaxed">
-              Tiap kucing memiliki suara meong, aksen dubber, dan model AI (Charon, Puck, Kore, Fenrir, Zephyr, Aoede) yang berbeda-beda! Sajikan hidangan diplomatik untuk mendongkrak statusmu di <span className="text-amber-300 font-bold">Papan Peringkat Sugar Daddy Kucing</span>!
+              Sajikan hidangan diplomatik nusantara dan jamuan kenegaraan kepada para kucing diplomat untuk mendongkrak statusmu di <span className="text-amber-300 font-bold">Papan Peringkat Sugar Daddy Kucing</span>!
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap">
-            {/* Quick Open Voice Studio Button */}
-            <button
-              onClick={() => { playSound('click'); setShowVoiceStudioModal(true); }}
-              className="bg-gradient-to-br from-amber-600 to-red-700 hover:from-amber-500 hover:to-red-600 px-4 py-3 rounded-2xl border border-amber-400/50 shadow-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95"
-            >
-              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-200">
-                <Mic className="w-4 h-4 text-amber-300" /> Studio Suara AI
-              </div>
-              <span className="text-[9px] font-bold text-white/80">Pilih Model Suara 🎙️</span>
-            </button>
-
             <div className="bg-black/40 backdrop-blur-md px-5 py-3 rounded-2xl border border-amber-500/30 text-center shadow-lg">
               <span className="text-[9px] font-black uppercase tracking-wider text-amber-300 block">Saldo XP Kamu</span>
               <span className="text-2xl font-black text-amber-400 font-mono flex items-center justify-center gap-1">
@@ -370,7 +324,7 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
           </div>
         </div>
 
-        {/* Sub-Navigation: Feeding vs Leaderboard vs Voice Studio */}
+        {/* Sub-Navigation: Feeding vs Leaderboard */}
         <div className="flex gap-2 mt-6 pt-4 border-t border-amber-500/20 flex-wrap">
           <button
             onClick={() => { playSound('click'); setActiveSubTab('feeding'); }}
@@ -392,13 +346,6 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
             }`}
           >
             <Trophy className="w-4 h-4 text-amber-300" /> Papan Peringkat Sugar Daddy (猫咪赞助榜)
-          </button>
-
-          <button
-            onClick={() => { playSound('click'); setShowVoiceStudioModal(true); }}
-            className="px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-400/30 cursor-pointer ml-auto"
-          >
-            <Sliders className="w-4 h-4 text-amber-300" /> Ganti Model Suara AI ({VOICE_MODELS.length} Model)
           </button>
         </div>
       </div>
@@ -707,7 +654,7 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
                 Klasemen Pemberi Makan Kucing Terbanyak (猫咪赞助榜)
               </h3>
               <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-                Siapakah yang paling royal menyajikan Bebek Peking, Seblak Rafael, dan Boba Chagee pada masing-masing kucing diplomat? Cek daftar donatur teratas di bawah ini!
+                Siapakah yang paling royal menyajikan Bebek Peking, Seblak Laily, dan Boba Chagee pada masing-masing kucing diplomat? Cek daftar donatur teratas di bawah ini!
               </p>
             </div>
 
@@ -848,138 +795,6 @@ export function CatCanteen({ user, userXp, onXpChange, playSound }: CatCanteenPr
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* AI VOICE MODEL STUDIO MODAL                                               */}
-      {/* ========================================================================= */}
-      <AnimatePresence>
-        {showVoiceStudioModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-[#180e12] border-2 border-amber-500/40 rounded-[2.5rem] max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl text-white overflow-hidden"
-            >
-              {/* Modal Header */}
-              <div className="p-6 bg-gradient-to-r from-red-950 via-[#231015] to-amber-950 border-b border-amber-500/30 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-2xl bg-red-600/30 border border-amber-400/40 text-amber-300">
-                    <Mic className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-serif font-black text-xl text-amber-100">
-                      Studio Model Suara Kucing (AI Voice Studio)
-                    </h3>
-                    <p className="text-xs text-amber-200/70">
-                      Pilih dari {VOICE_MODELS.length} model suara AI & Web Audio untuk mengisi suara kucing diplomatik
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => { playSound('click'); stopAllAudioPlayback(); setShowVoiceStudioModal(false); }}
-                  className="p-2 rounded-2xl bg-black/40 hover:bg-black/60 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Models List */}
-              <div className="p-6 overflow-y-auto space-y-3.5 flex-1">
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-center justify-between">
-                  <span>Model Aktif Saat Ini: <strong className="text-amber-300">{currentVoiceModel.name}</strong></span>
-                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 rounded-full font-mono text-amber-300">
-                    {currentVoiceModel.tag}
-                  </span>
-                </div>
-
-                <div className="space-y-2.5">
-                  {VOICE_MODELS.map((model) => {
-                    const isSelected = activeVoiceModelId === model.id;
-                    const isAuditioning = isAuditioningId === model.id;
-
-                    return (
-                      <div
-                        key={model.id}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-gradient-to-r from-red-950/60 to-amber-950/60 border-amber-400 ring-2 ring-amber-400/40 shadow-lg'
-                            : 'bg-black/30 border-slate-800 hover:border-amber-500/40'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3 min-w-0">
-                          <span className="text-2xl p-2 rounded-xl bg-black/40 border border-amber-500/20 shrink-0">
-                            {model.avatarIcon}
-                          </span>
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-serif font-black text-sm text-white">
-                                {model.name}
-                              </h4>
-                              <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-red-600/30 text-amber-300 border border-amber-500/30">
-                                {model.tag}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-300 leading-relaxed">
-                              {model.description}
-                            </p>
-                            <p className="text-[10px] text-amber-400/80 font-medium">
-                              Sesuai untuk: <span className="italic">{model.recommendedFor}</span>
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Audition & Select Actions */}
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                          {/* Audition Button */}
-                          <button
-                            onClick={() => handleAuditionModel(model)}
-                            disabled={isAuditioning}
-                            className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 text-xs font-bold border border-amber-400/30 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                          >
-                            <Volume2 className={`w-3.5 h-3.5 ${isAuditioning ? 'animate-bounce text-amber-400' : ''}`} />
-                            <span>{isAuditioning ? 'Memutar...' : 'Audisi'}</span>
-                          </button>
-
-                          {/* Select Button */}
-                          <button
-                            onClick={() => handleSelectVoiceModel(model.id)}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                              isSelected
-                                ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md'
-                                : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
-                            }`}
-                          >
-                            {isSelected ? (
-                              <>
-                                <CheckCircle className="w-3.5 h-3.5 text-amber-300" />
-                                <span>Aktif</span>
-                              </>
-                            ) : (
-                              <span>Pilih</span>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 bg-black/40 border-t border-amber-500/20 flex items-center justify-between text-xs text-amber-200/70">
-                <span>Model suara tersimpan secara otomatis di preferensi browser Anda.</span>
-                <button
-                  onClick={() => { playSound('click'); stopAllAudioPlayback(); setShowVoiceStudioModal(false); }}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 text-white font-bold cursor-pointer hover:scale-105 transition-transform"
-                >
-                  Selesai
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
