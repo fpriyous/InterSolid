@@ -63,16 +63,20 @@ export default function RandomMemoryPopup() {
           <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full scale-110 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           
           <div className="relative bg-white dark:bg-[#1a252f] border border-blue-100 dark:border-blue-900/30 p-2.5 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden">
-            {/* Minimalist Image Container */}
-            <div className="relative aspect-[4/5] rounded-xl overflow-hidden bg-gray-900/50">
+            {/* Adaptive Image Container */}
+            <div className={`relative ${memory.orientation === 'landscape' || (memory.aspectRatio && memory.aspectRatio > 1.1) ? 'aspect-[4/3]' : memory.orientation === 'portrait' || (memory.aspectRatio && memory.aspectRatio < 0.9) ? 'aspect-[3/4]' : 'aspect-[4/5]'} rounded-xl overflow-hidden bg-gray-950`}>
+              {/* Blurred Background to Fill Frame */}
+              <img src={memory.url} className="absolute inset-0 w-full h-full object-cover blur-md opacity-40 scale-125 pointer-events-none" alt="" />
+              
+              {/* Uncropped Centered Media */}
               {memory.type === 'image' ? (
-                <img src={memory.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-700" alt="" />
+                <img src={memory.url} className="relative z-10 w-full h-full object-contain opacity-90 group-hover:opacity-100 transition-all duration-700" alt="" />
               ) : (
-                <video src={memory.url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100" autoPlay muted loop playsInline />
+                <video src={memory.url} className="relative z-10 w-full h-full object-contain opacity-90 group-hover:opacity-100" autoPlay muted loop playsInline />
               )}
               
               {/* Overlay with Minimal Text */}
-              <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 via-black/20 to-transparent">
+              <div className="absolute inset-x-0 bottom-0 z-20 p-3 bg-gradient-to-t from-black/85 via-black/30 to-transparent">
                 <div className="flex flex-col gap-0.5">
                   <h3 className="text-[10px] font-black text-white uppercase tracking-wider truncate drop-shadow-md">
                     {memory.title || 'Kenangan'}

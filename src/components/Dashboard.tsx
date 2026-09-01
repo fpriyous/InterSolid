@@ -758,18 +758,23 @@ export default function Dashboard({ user, setActivePage }: DashboardProps) {
         <motion.div 
           variants={itemVariants}
           onClick={() => setActivePage('memory', recentMemories[0]?.id)}
-          className="lg:col-span-12 relative overflow-hidden bg-white dark:bg-slate-900 rounded-3xl md:rounded-[36px] border border-blue-50 dark:border-white/5 shadow-lg group cursor-pointer h-[280px] sm:h-[340px] md:h-[380px]"
+          className="lg:col-span-12 relative overflow-hidden bg-slate-950 rounded-3xl md:rounded-[36px] border border-blue-50 dark:border-white/5 shadow-lg group cursor-pointer h-[280px] sm:h-[340px] md:h-[380px]"
         >
           <div className="absolute inset-0 grayscale-[0.4] group-hover:grayscale-0 transition-all duration-700">
              {recentMemories[0] ? (
-               <img src={recentMemories[0].url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+               <>
+                 {/* Blurred ambient background */}
+                 <img src={recentMemories[0].url} className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-125 pointer-events-none" alt="" referrerPolicy="no-referrer" />
+                 {/* Center photo */}
+                 <img src={recentMemories[0].url} className="relative z-10 w-full h-full object-cover md:object-contain group-hover:scale-105 transition-transform duration-700" alt="" referrerPolicy="no-referrer" />
+               </>
              ) : (
                <div className="w-full h-full bg-slate-100 dark:bg-slate-800" />
              )}
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
+          <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent pointer-events-none" />
           
-          <div className="absolute bottom-0 inset-x-0 p-6 sm:p-8 md:p-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="absolute bottom-0 inset-x-0 z-20 p-6 sm:p-8 md:p-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
              <div className="max-w-xl space-y-3">
                 <div className="flex items-center gap-2">
                    <div className="p-1.5 bg-blue-600 rounded-lg text-white shadow-md">

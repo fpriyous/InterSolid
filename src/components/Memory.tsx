@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Trash2, Image as ImageIcon, Video, Upload, X, Loader2, Heart, MessageCircle, Sparkles, ShieldAlert, Box, Grid } from 'lucide-react';
+import { Plus, Trash2, Image as ImageIcon, Video, Upload, X, Loader2, Heart, MessageCircle, Sparkles, ShieldAlert, Box, Grid, Columns3, Smartphone, Monitor } from 'lucide-react';
 import { db, storage, logPortalActivity, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, Timestamp, updateDoc, arrayUnion, arrayRemove, getDocs, where } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -25,6 +25,11 @@ interface MemoryItem {
   createdAt: any;
   likes: string[];
   reactions?: Record<string, string[]>; // emoji -> array of uids
+  orientation?: 'portrait' | 'landscape' | 'square';
+  aspectRatio?: number;
+  width?: number;
+  height?: number;
+  calendarEventId?: string | null;
 }
 
 interface Comment {
@@ -153,6 +158,9 @@ function CommentSection({ memoryId, user }: { memoryId: string, user: User | nul
 }
 
 function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: number, onClick: () => void, key?: string }) {
+  const isPortrait = memory.orientation === 'portrait' || (memory.aspectRatio && memory.aspectRatio < 0.95);
+  const isLandscape = memory.orientation === 'landscape' || (memory.aspectRatio && memory.aspectRatio > 1.05);
+
   // Random position, rotation and size for authentic "scattered" look
   const [pos] = useState({
     top: `${10 + Math.random() * 70}%`,
@@ -177,7 +185,7 @@ function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: nu
         ease: "easeInOut"
       }}
       whileHover={{ 
-        scale: 1.2, 
+        scale: 1.18, 
         zIndex: 50, 
         opacity: 1,
         rotate: 0,
@@ -187,7 +195,13 @@ function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: nu
         e.stopPropagation();
         onClick();
       }}
-      className="absolute w-32 h-32 md:w-52 md:h-52 cursor-pointer shadow-2xl rounded-xl overflow-hidden border-2 border-white/20 hover:border-blue-400 hover:shadow-blue-500/40 bg-gray-900 z-10"
+      className={`absolute cursor-pointer shadow-2xl rounded-2xl overflow-hidden border-2 border-white/20 hover:border-blue-400 hover:shadow-blue-500/40 bg-gray-950 z-10 transition-shadow ${
+        isPortrait 
+          ? 'w-28 h-40 md:w-44 md:h-64' 
+          : isLandscape 
+            ? 'w-40 h-28 md:w-64 md:h-44' 
+            : 'w-32 h-32 md:w-52 md:h-52'
+      }`}
       style={{ 
         top: pos.top, 
         left: pos.left, 
@@ -195,11 +209,14 @@ function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: nu
       }}
     >
       <div className="w-full h-full relative group">
+        {/* Ambient Blur Behind */}
+        <img src={memory.url} className="absolute inset-0 w-full h-full object-cover blur-md opacity-50 scale-125 pointer-events-none" alt="" />
+        
         {memory.type === 'image' ? (
-          <img src={memory.url} className="w-full h-full object-cover" alt="" />
+          <img src={memory.url} className="relative z-10 w-full h-full object-contain" alt="" />
         ) : (
-          <div className="w-full h-full relative">
-            <video src={memory.url} className="w-full h-full object-cover" autoPlay muted loop playsInline />
+          <div className="relative z-10 w-full h-full">
+            <video src={memory.url} className="w-full h-full object-contain" autoPlay muted loop playsInline />
             <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                <div className="p-2 bg-white/20 backdrop-blur-md rounded-full">
                   <Video size={16} className="text-white" />
@@ -207,8 +224,13 @@ function MemoryFloat({ memory, index, onClick }: { memory: MemoryItem, index: nu
             </div>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-          <p className="text-[9px] text-white font-bold uppercase truncate">{memory.userName}</p>
+        <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/80 text-white font-bold uppercase">
+              {isPortrait ? 'Portrait' : isLandscape ? 'Landscape' : 'Photo'}
+            </span>
+            <p className="text-[9px] text-white font-bold uppercase truncate">{memory.userName}</p>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -227,12 +249,14 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
   const [displayDate, setDisplayDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileDimensions, setFileDimensions] = useState<{ width: number; height: number; aspectRatio: number; orientation: 'portrait' | 'landscape' | 'square' } | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   const [activeMemoryId, setActiveMemoryId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'warehouse'>('grid');
+  const [viewMode, setViewMode] = useState<'masonry' | 'grid' | 'warehouse'>('masonry');
+  const [loadedAspectMap, setLoadedAspectMap] = useState<Record<string, 'portrait' | 'landscape' | 'square'>>({});
   const [confirmDelete, setConfirmDelete] = useState<MemoryItem | null>(null);
 
   const activeMemory = useMemo(() => memories.find(m => m.id === activeMemoryId) || null, [memories, activeMemoryId]);
@@ -391,6 +415,37 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
     return () => { document.body.style.overflow = 'unset'; };
   }, [activeMemoryId, stageMode, showUpload]);
 
+  const processSelectedMedia = (file: File) => {
+    const isImage = file.type.startsWith('image/');
+    const objUrl = URL.createObjectURL(file);
+    setSelectedFile(file);
+    setPreviewUrl(objUrl);
+
+    if (isImage) {
+      const img = new Image();
+      img.onload = () => {
+        const w = img.naturalWidth || 1;
+        const h = img.naturalHeight || 1;
+        const ratio = w / h;
+        const orientation: 'portrait' | 'landscape' | 'square' =
+          h > w * 1.08 ? 'portrait' : (w > h * 1.08 ? 'landscape' : 'square');
+        setFileDimensions({ width: w, height: h, aspectRatio: ratio, orientation });
+      };
+      img.src = objUrl;
+    } else {
+      const vid = document.createElement('video');
+      vid.onloadedmetadata = () => {
+        const w = vid.videoWidth || 1;
+        const h = vid.videoHeight || 1;
+        const ratio = w / h;
+        const orientation: 'portrait' | 'landscape' | 'square' =
+          h > w * 1.08 ? 'portrait' : (w > h * 1.08 ? 'landscape' : 'square');
+        setFileDimensions({ width: w, height: h, aspectRatio: ratio, orientation });
+      };
+      vid.src = objUrl;
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -400,8 +455,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       return;
     }
 
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    processSelectedMedia(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -433,8 +487,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
       return;
     }
 
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    processSelectedMedia(file);
   };
 
   const handleUpload = async () => {
@@ -453,8 +506,8 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
         setUploadStatus('compressing');
         setUploadProgress(10);
         const options = {
-          maxSizeMB: 0.5,
-          maxWidthOrHeight: 1600,
+          maxSizeMB: 0.8,
+          maxWidthOrHeight: 2000,
           useWebWorker: true,
           onProgress: (p: number) => setUploadProgress(Math.round(p * 0.4))
         };
@@ -515,7 +568,20 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
         const publicId = result.public_id;
         setUploadProgress(90);
 
-        const memoryData = {
+        // Determine orientation
+        let finalOrientation: 'portrait' | 'landscape' | 'square' = fileDimensions?.orientation || 'landscape';
+        let finalAspectRatio: number = fileDimensions?.aspectRatio || 1.33;
+        let finalWidth: number | null = fileDimensions?.width || result.width || null;
+        let finalHeight: number | null = fileDimensions?.height || result.height || null;
+
+        if (result.width && result.height) {
+          finalWidth = result.width;
+          finalHeight = result.height;
+          finalAspectRatio = result.width / result.height;
+          finalOrientation = result.height > result.width * 1.08 ? 'portrait' : (result.width > result.height * 1.08 ? 'landscape' : 'square');
+        }
+
+        const memoryData: any = {
           type: isImage ? 'image' : 'video',
           url: downloadURL,
           publicId: publicId,
@@ -527,7 +593,11 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
           userName: user.displayName || 'Anonymous',
           userPhoto: user.photoURL,
           createdAt: Timestamp.now(),
-          likes: []
+          likes: [],
+          orientation: finalOrientation,
+          aspectRatio: finalAspectRatio,
+          width: finalWidth,
+          height: finalHeight
         };
 
         // Success - Save to Firestore
@@ -566,6 +636,7 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
         setShowUpload(false);
         setSelectedFile(null);
         setPreviewUrl(null);
+        setFileDimensions(null);
         setCaption('');
         setTitle('');
         setDisplayDate(new Date().toISOString().split('T')[0]);
@@ -803,15 +874,42 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
               </button>
 
               {/* Media View */}
-              <div className="w-full md:flex-1 shrink-0 bg-black flex items-center justify-center relative group/media aspect-square md:aspect-auto">
-                {activeMemory.type === 'image' ? (
-                  <img src={activeMemory.url} className="w-full h-full object-contain" alt="" />
-                ) : (
-                  <video src={activeMemory.url} controls autoPlay className="w-full h-full object-contain" />
+              <div className="w-full md:flex-1 shrink-0 bg-black/95 flex items-center justify-center relative group/media min-h-[300px] md:min-h-[500px] overflow-hidden p-2 md:p-6">
+                {/* Ambient Glow */}
+                {activeMemory.type === 'image' && (
+                  <img src={activeMemory.url} className="absolute inset-0 w-full h-full object-cover blur-3xl opacity-20 scale-150 pointer-events-none" alt="" />
                 )}
                 
+                {activeMemory.type === 'image' ? (
+                  <img 
+                    src={activeMemory.url} 
+                    className="relative z-10 max-h-[75vh] w-auto max-w-full object-contain rounded-xl md:rounded-2xl shadow-2xl" 
+                    alt={activeMemory.caption || activeMemory.title} 
+                  />
+                ) : (
+                  <video 
+                    src={activeMemory.url} 
+                    controls 
+                    autoPlay 
+                    className="relative z-10 max-h-[75vh] w-auto max-w-full object-contain rounded-xl md:rounded-2xl shadow-2xl" 
+                  />
+                )}
+                
+                {/* Orientation Tag */}
+                <div className="absolute top-4 left-4 z-20">
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/60 backdrop-blur-md text-white/90 border border-white/10 flex items-center gap-1.5">
+                    {activeMemory.orientation === 'portrait' || (activeMemory.aspectRatio && activeMemory.aspectRatio < 0.95) ? (
+                      <><Smartphone size={12} className="text-blue-400" /> Portrait</>
+                    ) : activeMemory.orientation === 'landscape' || (activeMemory.aspectRatio && activeMemory.aspectRatio > 1.05) ? (
+                      <><Monitor size={12} className="text-emerald-400" /> Landscape</>
+                    ) : (
+                      <><ImageIcon size={12} className="text-amber-400" /> Persegi</>
+                    )}
+                  </span>
+                </div>
+                
                 {/* Floating Emojis Menu */}
-                <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 md:p-2 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-full opacity-0 group-hover/media:opacity-100 transition-all duration-300 overflow-x-auto no-scrollbar max-w-[90vw]">
+                <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 md:p-2 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-full opacity-0 group-hover/media:opacity-100 transition-all duration-300 overflow-x-auto no-scrollbar max-w-[90vw] z-20">
                   {EMOJI_LIST.map(emoji => {
                     const reactors = activeMemory.reactions?.[emoji] || [];
                     const isMyReaction = reactors.includes(user?.uid || '');
@@ -896,18 +994,28 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="flex bg-gray-100 dark:bg-gray-800/50 p-1 rounded-2xl border border-gray-200 dark:border-white/5 mr-2">
             <button 
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-xl transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-500' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Grid View"
+              onClick={() => setViewMode('masonry')}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold ${viewMode === 'masonry' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-500' : 'text-gray-400 hover:text-gray-600'}`}
+              title="Masonry (Adaptif / Tanpa Terpotong)"
             >
-              <Grid size={18} />
+              <Columns3 size={16} />
+              <span className="hidden sm:inline">Adaptif</span>
+            </button>
+            <button 
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold ${viewMode === 'grid' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-500' : 'text-gray-400 hover:text-gray-600'}`}
+              title="Grid Bingkai"
+            >
+              <Grid size={16} />
+              <span className="hidden sm:inline">Grid</span>
             </button>
             <button 
               onClick={() => setViewMode('warehouse')}
-              className={`p-2 rounded-xl transition-all ${viewMode === 'warehouse' ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-500' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold ${viewMode === 'warehouse' ? 'bg-white dark:bg-gray-700 shadow-sm text-indigo-500' : 'text-gray-400 hover:text-gray-600'}`}
               title="Memory Warehouse (3D)"
             >
-              <Box size={18} />
+              <Box size={16} />
+              <span className="hidden sm:inline">3D</span>
             </button>
           </div>
 
@@ -944,81 +1052,213 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
             onOpenItem={(item) => setActiveMemoryId(item.id)}
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {memories.map((m) => (
-            <div key={m.id} className="group bg-white dark:bg-[#1a252f] rounded-[32px] overflow-hidden border border-blue-50 dark:border-blue-900/20 shadow-sm hover:shadow-xl transition-all duration-500">
+      ) : viewMode === 'masonry' ? (
+        /* Masonry View: Fully uncropped layout respecting portrait and landscape */
+        <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 space-y-6">
+          {memories.map((m) => {
+            const itemOrient = m.orientation || loadedAspectMap[m.id] || ((m.aspectRatio && m.aspectRatio < 0.95) ? 'portrait' : 'landscape');
+            return (
               <div 
-                className="relative aspect-square overflow-hidden cursor-zoom-in"
-                onClick={() => setActiveMemoryId(m.id)}
+                key={m.id} 
+                className="break-inside-avoid group bg-white dark:bg-[#1a252f] rounded-[32px] overflow-hidden border border-blue-50 dark:border-blue-900/20 shadow-sm hover:shadow-xl transition-all duration-500 flex flex-col"
               >
-                {m.type === 'image' ? (
-                  <img 
-                    src={m.url} 
-                    alt={m.caption} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    loading="lazy"
-                  />
-                ) : (
-                  <video 
-                    src={m.url} 
-                    className="w-full h-full object-cover" 
-                    controls 
-                  />
-                )}
-                
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6">
-                  <div className="flex items-center gap-3">
-                    <img src={m.userPhoto} className="w-8 h-8 rounded-full border-2 border-white/50" alt="" />
-                    <div className="text-white">
-                      <p className="text-[10px] font-bold uppercase tracking-wider leading-none mb-1">{m.userName}</p>
-                      <p className="text-[9px] opacity-70">{m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString('en-US') : 'Just Now'}</p>
-                    </div>
-                  </div>
-                </div>
+                <div 
+                  className="relative overflow-hidden cursor-zoom-in bg-slate-900/10 dark:bg-black/40"
+                  onClick={() => setActiveMemoryId(m.id)}
+                >
+                  {/* Media without fixed aspect-square - fully preserves portrait & landscape */}
+                  {m.type === 'image' ? (
+                    <img 
+                      src={m.url} 
+                      alt={m.caption} 
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        if (!m.orientation && img.naturalWidth && img.naturalHeight) {
+                          const orient = img.naturalHeight > img.naturalWidth * 1.08 ? 'portrait' : (img.naturalWidth > img.naturalHeight * 1.08 ? 'landscape' : 'square');
+                          setLoadedAspectMap(prev => ({ ...prev, [m.id]: orient }));
+                        }
+                      }}
+                      className="w-full h-auto block object-cover group-hover:scale-[1.03] transition-transform duration-700"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <video 
+                      src={m.url} 
+                      className="w-full h-auto max-h-[500px] object-contain bg-black" 
+                      controls 
+                    />
+                  )}
 
-                {(isAdmin || user?.uid === m.userId) && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDelete(m);
-                    }}
-                    className="absolute top-4 right-4 p-2 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-red-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
-
-              <div className="p-6">
-                <p className="text-sm font-medium mb-4 line-clamp-2 italic text-gray-700 dark:text-gray-300">
-                  "{m.caption || 'No description'}"
-                </p>
-                <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-gray-800">
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={() => toggleLike(m)}
-                      className={`flex items-center gap-2 text-xs font-bold transition-all px-3 py-1.5 rounded-full ${m.likes?.includes(user?.uid || '') ? 'bg-red-50 text-red-500' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-                    >
-                      <Heart size={14} fill={m.likes?.includes(user?.uid || '') ? 'currentColor' : 'none'} />
-                      {m.likes?.length || 0}
-                    </button>
-
-                    <div className="flex -space-x-1">
-                      {Object.entries(m.reactions || {}).slice(0, 3).map(([emoji, uids]) => {
-                      const reactorIds = uids as any[];
-                      return reactorIds.length > 0 && <span key={emoji} className="text-sm drop-shadow-sm">{emoji}</span>
-                    })}
-                    </div>
+                  {/* Orientation badge */}
+                  <div className="absolute top-4 left-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md bg-black/60 text-white/90 border border-white/10 flex items-center gap-1.5 shadow-lg">
+                      {itemOrient === 'portrait' ? (
+                        <><Smartphone size={10} className="text-blue-400" /> Portrait</>
+                      ) : itemOrient === 'landscape' ? (
+                        <><Monitor size={10} className="text-emerald-400" /> Landscape</>
+                      ) : (
+                        <><ImageIcon size={10} className="text-amber-400" /> Persegi</>
+                      )}
+                    </span>
                   </div>
                   
-                  <div className="flex items-center gap-1 text-gray-300">
-                    {m.type === 'image' ? <ImageIcon size={14} /> : <Video size={14} />}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6">
+                    <div className="flex items-center gap-3">
+                      <img src={m.userPhoto} className="w-8 h-8 rounded-full border-2 border-white/50 object-cover" alt="" />
+                      <div className="text-white">
+                        <p className="text-[10px] font-bold uppercase tracking-wider leading-none mb-1">{m.userName}</p>
+                        <p className="text-[9px] opacity-70">{m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString('en-US') : 'Just Now'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(isAdmin || user?.uid === m.userId) && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDelete(m);
+                      }}
+                      className="absolute top-4 right-4 p-2 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-red-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-6">
+                  {m.title && (
+                    <h4 className="font-bold text-sm text-gray-900 dark:text-white mb-1.5">{m.title}</h4>
+                  )}
+                  <p className="text-sm font-medium mb-4 line-clamp-3 italic text-gray-700 dark:text-gray-300">
+                    "{m.caption || 'No description'}"
+                  </p>
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-gray-800">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => toggleLike(m)}
+                        className={`flex items-center gap-2 text-xs font-bold transition-all px-3 py-1.5 rounded-full ${m.likes?.includes(user?.uid || '') ? 'bg-red-50 text-red-500' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                      >
+                        <Heart size={14} fill={m.likes?.includes(user?.uid || '') ? 'currentColor' : 'none'} />
+                        {m.likes?.length || 0}
+                      </button>
+
+                      <div className="flex -space-x-1">
+                        {Object.entries(m.reactions || {}).slice(0, 3).map(([emoji, uids]) => {
+                          const reactorIds = uids as any[];
+                          return reactorIds.length > 0 && <span key={emoji} className="text-sm drop-shadow-sm">{emoji}</span>
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                      {m.type === 'image' ? <ImageIcon size={14} /> : <Video size={14} />}
+                      <span className="text-[10px] uppercase font-bold">{m.displayDate || ''}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+      ) : (
+        /* Uniform Framed Grid with Background Blur - Ensures full uncropped viewing */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {memories.map((m) => {
+            const itemOrient = m.orientation || loadedAspectMap[m.id] || ((m.aspectRatio && m.aspectRatio < 0.95) ? 'portrait' : 'landscape');
+            return (
+              <div key={m.id} className="group bg-white dark:bg-[#1a252f] rounded-[32px] overflow-hidden border border-blue-50 dark:border-blue-900/20 shadow-sm hover:shadow-xl transition-all duration-500 flex flex-col">
+                <div 
+                  className="relative aspect-square overflow-hidden cursor-zoom-in bg-slate-950"
+                  onClick={() => setActiveMemoryId(m.id)}
+                >
+                  {/* Ambient background blur */}
+                  <img src={m.url} className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-125 pointer-events-none" alt="" />
+
+                  {/* Centered Uncropped Media */}
+                  {m.type === 'image' ? (
+                    <img 
+                      src={m.url} 
+                      alt={m.caption} 
+                      className="relative z-10 w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <video 
+                      src={m.url} 
+                      className="relative z-10 w-full h-full object-contain" 
+                      controls 
+                    />
+                  )}
+
+                  {/* Orientation badge */}
+                  <div className="absolute top-4 left-4 z-20">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md bg-black/60 text-white/90 border border-white/10 flex items-center gap-1.5 shadow-lg">
+                      {itemOrient === 'portrait' ? (
+                        <><Smartphone size={10} className="text-blue-400" /> Portrait</>
+                      ) : itemOrient === 'landscape' ? (
+                        <><Monitor size={10} className="text-emerald-400" /> Landscape</>
+                      ) : (
+                        <><ImageIcon size={10} className="text-amber-400" /> Persegi</>
+                      )}
+                    </span>
+                  </div>
+                  
+                  <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6">
+                    <div className="flex items-center gap-3">
+                      <img src={m.userPhoto} className="w-8 h-8 rounded-full border-2 border-white/50 object-cover" alt="" />
+                      <div className="text-white">
+                        <p className="text-[10px] font-bold uppercase tracking-wider leading-none mb-1">{m.userName}</p>
+                        <p className="text-[9px] opacity-70">{m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString('en-US') : 'Just Now'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(isAdmin || user?.uid === m.userId) && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDelete(m);
+                      }}
+                      className="absolute top-4 right-4 z-30 p-2 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-red-500 hover:scale-110 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-6">
+                  {m.title && (
+                    <h4 className="font-bold text-sm text-gray-900 dark:text-white mb-1.5">{m.title}</h4>
+                  )}
+                  <p className="text-sm font-medium mb-4 line-clamp-2 italic text-gray-700 dark:text-gray-300">
+                    "{m.caption || 'No description'}"
+                  </p>
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-50 dark:border-gray-800">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => toggleLike(m)}
+                        className={`flex items-center gap-2 text-xs font-bold transition-all px-3 py-1.5 rounded-full ${m.likes?.includes(user?.uid || '') ? 'bg-red-50 text-red-500' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                      >
+                        <Heart size={14} fill={m.likes?.includes(user?.uid || '') ? 'currentColor' : 'none'} />
+                        {m.likes?.length || 0}
+                      </button>
+
+                      <div className="flex -space-x-1">
+                        {Object.entries(m.reactions || {}).slice(0, 3).map(([emoji, uids]) => {
+                          const reactorIds = uids as any[];
+                          return reactorIds.length > 0 && <span key={emoji} className="text-sm drop-shadow-sm">{emoji}</span>
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1 text-gray-300">
+                      {m.type === 'image' ? <ImageIcon size={14} /> : <Video size={14} />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1053,11 +1293,14 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative bg-white dark:bg-[#1a252f] w-full max-w-lg rounded-[40px] overflow-hidden shadow-2xl border border-blue-100 dark:border-blue-900/30"
+              className="relative bg-white dark:bg-[#1a252f] w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[40px] shadow-2xl border border-blue-100 dark:border-blue-900/30"
             >
               <div className="p-8">
                 <div className="flex justify-between items-center mb-8">
-                  <h3 className="font-serif text-2xl font-bold">Share a Memory</h3>
+                  <div>
+                    <h3 className="font-serif text-2xl font-bold">Share a Memory</h3>
+                    <p className="text-xs text-gray-400 mt-1">Upload portrait or landscape photo without any cropping</p>
+                  </div>
                   {!uploading && (
                     <button 
                       onClick={() => setShowUpload(false)} 
@@ -1074,25 +1317,50 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`relative aspect-video rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-4 group cursor-pointer transition-all ${
+                  className={`relative rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-4 group cursor-pointer transition-all overflow-hidden bg-slate-950/5 dark:bg-black/30 ${
                     previewUrl 
-                      ? 'border-blue-500' 
+                      ? (fileDimensions?.orientation === 'portrait' ? 'h-80 border-blue-500 bg-slate-950' : 'aspect-video border-blue-500 bg-slate-950')
                       : isDragging 
-                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 scale-[1.02] shadow-2xl shadow-blue-500/10' 
-                        : 'border-gray-100 dark:border-gray-800 hover:border-blue-300'
+                        ? 'aspect-video border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 scale-[1.02] shadow-2xl shadow-blue-500/10' 
+                        : 'aspect-video border-gray-100 dark:border-gray-800 hover:border-blue-300'
                   }`}
                 >
                   {previewUrl ? (
-                    <div className="absolute inset-0 p-2">
+                    <div className="absolute inset-0 flex items-center justify-center p-2">
+                       {/* Blurred background */}
+                       <img src={previewUrl} className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-125" alt="" />
+                       
+                       {/* Centered uncropped preview */}
                        {selectedFile?.type.startsWith('image/') ? (
-                         <img src={previewUrl} className="w-full h-full object-cover rounded-2xl" alt="" />
+                         <img src={previewUrl} className="relative z-10 max-h-full max-w-full object-contain rounded-2xl shadow-xl" alt="" />
                        ) : (
-                         <video src={previewUrl} className="w-full h-full object-cover rounded-2xl" />
+                         <video src={previewUrl} className="relative z-10 max-h-full max-w-full object-contain rounded-2xl shadow-xl" controls />
                        )}
+
+                       {/* Orientation Info Pill */}
+                       {fileDimensions && (
+                         <div className="absolute bottom-3 left-3 z-20">
+                           <span className="px-3 py-1 rounded-full text-[10px] font-bold backdrop-blur-md bg-black/70 text-white border border-white/10 flex items-center gap-1.5 shadow-lg">
+                             {fileDimensions.orientation === 'portrait' ? (
+                               <><Smartphone size={12} className="text-blue-400" /> Foto Portrait ({fileDimensions.width}×{fileDimensions.height}px)</>
+                             ) : fileDimensions.orientation === 'landscape' ? (
+                               <><Monitor size={12} className="text-emerald-400" /> Foto Landscape ({fileDimensions.width}×{fileDimensions.height}px)</>
+                             ) : (
+                               <><ImageIcon size={12} className="text-amber-400" /> Foto Persegi ({fileDimensions.width}×{fileDimensions.height}px)</>
+                             )}
+                           </span>
+                         </div>
+                       )}
+
                        {!uploading && (
                          <button 
-                          onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setPreviewUrl(null); }}
-                          className="absolute top-4 right-4 bg-red-500 text-white p-2 rounded-xl shadow-lg"
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setSelectedFile(null); 
+                            setPreviewUrl(null); 
+                            setFileDimensions(null);
+                          }}
+                          className="absolute top-4 right-4 z-20 bg-red-500 text-white p-2 rounded-xl shadow-lg hover:bg-red-600 transition-colors"
                          >
                            <X size={16} />
                          </button>
@@ -1103,9 +1371,9 @@ export default function Memory({ isAdmin, user, targetId, setTargetId }: { isAdm
                       <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
                         <Upload size={32} />
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Click or Drag File Here</p>
-                        <p className="text-[10px] text-gray-400 mt-1 uppercase">Max 20MB (Images or Short Videos)</p>
+                      <div className="text-center px-4">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-700 dark:text-gray-300">Click or Drag Photo / Video Here</p>
+                        <p className="text-[10px] text-gray-400 mt-1 uppercase">Otomatis menyesuaikan format Portrait atau Landscape</p>
                       </div>
                     </>
                   )}
